@@ -2,7 +2,7 @@
 
 ## P0 — Discovery shell (current)
 
-- Agent TS clean layers + Oxylabs-only `JobSearchPort`
+- Agent TS clean layers + Oxylabs **Web Scraper API** (`google_search`) as the only `JobSearchPort` adapter
 - File persistence + digest
 - HTTP API for any future client
 - SwiftUI menu bar: `idle | running | attention | ready | error`

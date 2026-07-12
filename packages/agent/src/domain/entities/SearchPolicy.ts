@@ -11,4 +11,5 @@ export const DEFAULT_SEARCH_POLICY: SearchPolicy = {
   queries: ["ios senior"],
   cadence: { kind: "manual" },
   resultLimitPerQuery: 10,
+  geoLocation: "United States",
 };

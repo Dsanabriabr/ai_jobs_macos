@@ -2,6 +2,8 @@
 
 Base URL default: `http://127.0.0.1:8787`
 
+Discovery backend (P0): Oxylabs Web Scraper API `google_search` via `OXYLABS_USERNAME` / `OXYLABS_PASSWORD` (not AI Studio).
+
 ## `GET /health`
 
 ```json
@@ -29,7 +31,7 @@ Base URL default: `http://127.0.0.1:8787`
         "title": "...",
         "company": null,
         "url": "https://...",
-        "source": "oxylabs-ai-search",
+        "source": "oxylabs-web-scraper-google-search",
         "queryMatched": "ios senior",
         "description": "...",
         "discoveredAt": "ISO-8601"

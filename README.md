@@ -10,8 +10,22 @@ Menu bar macOS app + local TypeScript agent for job discovery.
 | HTTP contract | `packages/agent` `:8787` | Client-agnostic API (Swift today, Flutter later) |
 | Interface | `apps/macos` | `MenuBarExtra` client |
 
-**P0 scope:** Oxylabs AI-Search only → normalize → persist → digest list → menu bar status.
-No Cursor ranking, no apply, no Google adapter.
+**P0 scope:** Oxylabs **Web Scraper API** (`google_search`) → normalize → persist → digest → menu bar.  
+No Cursor ranking, no apply, no AI Studio.
+
+## Credentials (important)
+
+Use the **Web Scraper API** user from the Oxylabs dashboard (`USERNAME` / `PASSWORD` → Basic auth on `realtime.oxylabs.io`).
+
+Do **not** use an AI Studio API key. Do **not** commit real credentials.
+
+```bash
+cd packages/agent
+cp .env.example .env
+# edit .env:
+# OXYLABS_USERNAME=your_api_user
+# OXYLABS_PASSWORD='your_password'   # quote if it has +, #, spaces, etc.
+```
 
 ## Quick start
 
@@ -19,9 +33,16 @@ No Cursor ranking, no apply, no Google adapter.
 
 ```bash
 cd packages/agent
-cp .env.example .env   # set OXYLABS_API_KEY
+cp .env.example .env   # fill USERNAME / PASSWORD
 npm install
 npm run dev
+```
+
+Smoke check (another terminal):
+
+```bash
+curl -s http://127.0.0.1:8787/health
+curl -s -X POST http://127.0.0.1:8787/runs | head -c 500
 ```
 
 ### 2. macOS menu bar
@@ -43,6 +64,8 @@ Popover: latest digest + **Run now**. Status colors map from `MenuBarStatus`.
 | `GET` | `/policy` | Search policy |
 | `PUT` | `/policy` | Update queries + cadence |
 | `POST` | `/runs` | Trigger digest run |
+
+Details: [docs/HTTP_CONTRACT.md](docs/HTTP_CONTRACT.md)
 
 ## Roadmap
 
