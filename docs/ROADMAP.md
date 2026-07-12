@@ -8,31 +8,27 @@
 - SwiftUI menu bar: `idle | running | attention | ready | error`
 - `SearchPolicy` with configurable `DigestCadence` + manual run
 
-**Known P0 bias:** default query `ios senior` + `geo_location: United States` → English/US-heavy SERPs. Acceptable for smoke test; corrected in P1 via persona + query graph.
-
-## P1 — Sources, schedule & search persona (`feature/p1-search-persona`)
-
-### Done on this branch
+## P1 — Search persona (`feature/p1-search-persona`)
 
 - `CandidateProfile` + `TermGraph` + `QueryPlanner`
-- `SearchPolicy.mode`: `persona_graph` | `manual_queries`
-- Geo rotation from `preferredGeos`; bilingual EN/PT planned searches
-- `GET /policy/plan` preview; digest stores `plannedSearches`
-- In-process cadence scheduler (non-manual)
-- Menu bar: mode toggle, geos, max planned, plan preview
+- Bilingual EN/PT + geo rotation
+- `GET /policy/plan` + menu bar plan preview
+- Cadence scheduler (backend)
 
-### Still open for later P1 follow-ups
+## P1.1 — Signal quality (`feature/p1-signal-quality`) — current
 
-- Additional search adapters (boards / dedicated Jobs URLs)
-- Richer term-graph editor in UI (node weights)
-- Editable pipeline stages on job entities
+- Host denylist (aggregators) + ATS preference / allowlist
+- Canonical job via fingerprint + mirror merge (same role across boards → one card)
+- Manual labels: `signal` | `noise` | `duplicate` → `feedback.jsonl` journal (Create ML corpus)
+- Noisy hosts from journal reinforce denylist at runtime
+- Listing filters: hide_noise / unlabeled / signal / ats_only / all
+- Cadence picker in menu bar (manual / daily / weekly / monthly)
+- Planner ATS-first `site:` queries (gupy / greenhouse / lever / ashby)
 
 ## P2 — Intelligence v1 (Cursor)
 
-- Ranking, pros/cons, cover letter via Cursor SDK (uses profile + graph as context)
-- **Structured logging / event journal** of every Cursor output and user feedback
-  (`approve` / `reject` / `ignore`, scores, prompts, job snapshots)
-- This journal is the training corpus for Create ML in P4 — do not skip
+- Ranking, pros/cons, cover letter via Cursor SDK (on **cleaned** jobs)
+- Extend journal with Cursor outputs + approve/reject/ignore
 
 ## P3 — Apply
 
@@ -42,9 +38,8 @@
 
 ## P4 — Intelligence v2 (Create ML)
 
-- On-device ranker/classifier trained on P2 journal
-- Local pre-filter; Cursor reserved for edge cases and generative text
-- Term-graph weights can be tuned from feedback (edge weights ← approve/reject)
+- On-device classifier trained on P1.1+P2 journal
+- Local pre-filter; Cursor for edge cases / generative text
 
 ## P5 — Multi-client & voice
 

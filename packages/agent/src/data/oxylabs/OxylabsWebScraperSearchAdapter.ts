@@ -1,5 +1,6 @@
 import type { JobListingDraft } from "../../domain/entities/JobOpportunity.js";
 import type { JobSearchPort, JobSearchQuery } from "../../domain/ports/JobSearchPort.js";
+import { classifyHost, isDeniedHost } from "../../domain/services/HostPolicy.js";
 
 const REALTIME_URL = "https://realtime.oxylabs.io/v1/queries";
 
@@ -24,29 +25,26 @@ function guessCompany(title: string, description: string | null): string | null 
   return fromDesc?.[1]?.trim() ?? null;
 }
 
-function looksLikeJobResult(title: string, url: string, description: string | null): boolean {
+function looksLikeJobPosting(title: string, url: string, description: string | null): boolean {
+  if (isDeniedHost(url)) return false;
+  const kind = classifyHost(url);
+  if (kind === "ats") return true;
+
   const haystack = `${title} ${description ?? ""} ${url}`.toLowerCase();
-  const signals = [
-    "job",
-    "jobs",
-    "career",
-    "careers",
-    "hiring",
-    "vacancy",
-    "vaga",
-    "emprego",
-    "greenhouse",
-    "lever.co",
-    "ashbyhq",
-    "workday",
-    "linkedin.com/jobs",
-    "indeed.com",
-    "glassdoor",
-    "boards.greenhouse",
-    "apply",
-    "opening",
-  ];
-  return signals.some((s) => haystack.includes(s));
+  const path = (() => {
+    try {
+      return new URL(url).pathname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+
+  const pathSignals = ["/job", "/jobs/", "/vaga", "/careers/", "/position", "/opening", "/aplicar"];
+  const hasPath = pathSignals.some((s) => path.includes(s));
+  const titleSignals = ["ios", "swift", "mobile", "senior", "engineer", "developer", "desenvolvedor"];
+  const hasTitle = titleSignals.some((s) => haystack.includes(s));
+
+  return hasPath && hasTitle;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -85,13 +83,15 @@ export class OxylabsWebScraperSearchAdapter implements JobSearchPort {
   }
 
   async search(input: JobSearchQuery): Promise<JobListingDraft[]> {
-    const jobOrientedQuery = `${input.query} jobs hiring`;
+    // If planner already scoped with site:, don't append noisy "jobs hiring".
+    const hasSiteOperator = /\bsite:/i.test(input.query);
+    const jobOrientedQuery = hasSiteOperator ? input.query : `${input.query} jobs hiring`;
     const body = {
       source: "google_search",
       query: jobOrientedQuery,
       parse: true,
       limit: Math.min(Math.max(input.limit, 1), 20),
-      geo_location: input.geoLocation ?? "United States",
+      geo_location: input.geoLocation ?? "Brazil",
     };
 
     const auth = Buffer.from(
@@ -149,6 +149,6 @@ export class OxylabsWebScraperSearchAdapter implements JobSearchPort {
           description,
         } satisfies JobListingDraft;
       })
-      .filter((row) => looksLikeJobResult(row.title, row.url, row.description));
+      .filter((row) => looksLikeJobPosting(row.title, row.url, row.description));
   }
 }

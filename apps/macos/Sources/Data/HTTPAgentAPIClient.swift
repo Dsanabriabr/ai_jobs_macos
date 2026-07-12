@@ -4,11 +4,12 @@ import Foundation
 protocol AgentAPIClient {
     func health() async throws -> Bool
     func status() async throws -> StatusResponse
-    func latestDigest() async throws -> DigestDTO?
+    func latestDigest(filter: String) async throws -> DigestDTO?
     func policy() async throws -> SearchPolicyDTO
     func updatePolicy(_ policy: SearchPolicyDTO) async throws -> SearchPolicyDTO
     func previewPlan() async throws -> SearchPlanDTO
     func triggerRun() async throws -> DigestDTO
+    func labelJob(id: String, label: String) async throws -> JobOpportunityDTO
 }
 
 enum AgentAPIError: LocalizedError {
@@ -28,6 +29,10 @@ enum AgentAPIError: LocalizedError {
     }
 }
 
+private struct LabelBody: Encodable {
+    let label: String
+}
+
 @MainActor
 struct HTTPAgentAPIClient: AgentAPIClient {
     var baseURL: URL
@@ -37,72 +42,90 @@ struct HTTPAgentAPIClient: AgentAPIClient {
     }
 
     func health() async throws -> Bool {
-        let url = baseURL.appending(path: "health")
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            return false
-        }
+        let (data, response) = try await URLSession.shared.data(from: baseURL.appending(path: "health"))
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
         return !data.isEmpty
     }
 
     func status() async throws -> StatusResponse {
-        try await get("status")
+        try await get(baseURL.appending(path: "status"))
     }
 
-    func latestDigest() async throws -> DigestDTO? {
-        let response: DigestResponse = try await get("digest/latest")
-        return response.digest
-    }
-
-    func policy() async throws -> SearchPolicyDTO {
-        let response: PolicyResponse = try await get("policy")
-        return response.policy
-    }
-
-    func updatePolicy(_ policy: SearchPolicyDTO) async throws -> SearchPolicyDTO {
-        let response: PolicyResponse = try await put("policy", body: policy)
-        return response.policy
-    }
-
-    func previewPlan() async throws -> SearchPlanDTO {
-        let response: PlanResponse = try await get("policy/plan")
-        return response.plan
-    }
-
-    func triggerRun() async throws -> DigestDTO {
-        let response: RunResponse = try await post("runs")
-        return response.digest
-    }
-
-    private func get<T: Decodable>(_ path: String) async throws -> T {
-        let url = baseURL.appending(path: path)
+    func latestDigest(filter: String) async throws -> DigestDTO? {
+        var components = URLComponents(url: baseURL.appending(path: "digest/latest"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "filter", value: filter)]
+        guard let url = components.url else { throw AgentAPIError.invalidURL }
         let (data, response) = try await URLSession.shared.data(from: url)
         try throwIfNeeded(response, data: data)
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try JSONDecoder().decode(DigestResponse.self, from: data).digest
         } catch {
             throw AgentAPIError.decoding(error)
         }
     }
 
-    private func post<T: Decodable>(_ path: String) async throws -> T {
-        var request = URLRequest(url: baseURL.appending(path: path))
+    func policy() async throws -> SearchPolicyDTO {
+        let response: PolicyResponse = try await get(baseURL.appending(path: "policy"))
+        return response.policy
+    }
+
+    func updatePolicy(_ policy: SearchPolicyDTO) async throws -> SearchPolicyDTO {
+        let response: PolicyResponse = try await send(
+            url: baseURL.appending(path: "policy"),
+            method: "PUT",
+            body: policy
+        )
+        return response.policy
+    }
+
+    func previewPlan() async throws -> SearchPlanDTO {
+        let response: PlanResponse = try await get(baseURL.appending(path: "policy/plan"))
+        return response.plan
+    }
+
+    func triggerRun() async throws -> DigestDTO {
+        var request = URLRequest(url: baseURL.appending(path: "runs"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await URLSession.shared.data(for: request)
         try throwIfNeeded(response, data: data)
         do {
+            return try JSONDecoder().decode(RunResponse.self, from: data).digest
+        } catch {
+            throw AgentAPIError.decoding(error)
+        }
+    }
+
+    func labelJob(id: String, label: String) async throws -> JobOpportunityDTO {
+        let url = baseURL
+            .appending(path: "jobs")
+            .appending(path: id)
+            .appending(path: "label")
+        let response: LabelResponse = try await send(
+            url: url,
+            method: "POST",
+            body: LabelBody(label: label)
+        )
+        return response.job
+    }
+
+    private func get<T: Decodable>(_ url: URL) async throws -> T {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        try throwIfNeeded(response, data: data)
+        do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw AgentAPIError.decoding(error)
         }
     }
 
-    private func put<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
-        var request = URLRequest(url: baseURL.appending(path: path))
-        request.httpMethod = "PUT"
+    private func send<T: Decodable, B: Encodable>(url: URL, method: String, body: B?) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(body)
+        if let body {
+            request.httpBody = try JSONEncoder().encode(body)
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         try throwIfNeeded(response, data: data)
         do {
@@ -115,8 +138,7 @@ struct HTTPAgentAPIClient: AgentAPIClient {
     private func throwIfNeeded(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw AgentAPIError.badStatus(http.statusCode, body)
+            throw AgentAPIError.badStatus(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
     }
 }

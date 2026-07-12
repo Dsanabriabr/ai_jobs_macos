@@ -12,6 +12,7 @@ final class AppSession: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var lastError: String?
     @Published var agentReachable = false
+    @Published var listFilter = "hide_noise"
 
     private let client: any AgentAPIClient
     private var pollTask: Task<Void, Never>?
@@ -38,7 +39,7 @@ final class AppSession: ObservableObject {
             let statusResponse = try await client.status()
             status = statusResponse.status
             errorMessage = statusResponse.errorMessage
-            digest = try await client.latestDigest()
+            digest = try await client.latestDigest(filter: listFilter)
             policy = try await client.policy()
             plan = try await client.previewPlan()
             lastError = nil
@@ -54,7 +55,8 @@ final class AppSession: ObservableObject {
         status = .running
         defer { isRunning = false }
         do {
-            digest = try await client.triggerRun()
+            _ = try await client.triggerRun()
+            digest = try await client.latestDigest(filter: listFilter)
             let statusResponse = try await client.status()
             status = statusResponse.status
             errorMessage = statusResponse.errorMessage
@@ -70,6 +72,16 @@ final class AppSession: ObservableObject {
         do {
             self.policy = try await client.updatePolicy(policy)
             self.plan = try await client.previewPlan()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func label(jobId: String, as label: String) async {
+        do {
+            _ = try await client.labelJob(id: jobId, label: label)
+            digest = try await client.latestDigest(filter: listFilter)
             lastError = nil
         } catch {
             lastError = error.localizedDescription

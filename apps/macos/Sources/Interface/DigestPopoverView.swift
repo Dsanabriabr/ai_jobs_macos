@@ -7,6 +7,7 @@ struct DigestPopoverView: View {
     @State private var queriesText = ""
     @State private var geosText = "Brazil, United States, Germany"
     @State private var maxPlanned = 6
+    @State private var cadenceKind = "manual"
     @State private var showPolicy = false
 
     var body: some View {
@@ -18,6 +19,7 @@ struct DigestPopoverView: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+            filterBar
             Divider()
             jobList
             Divider()
@@ -30,7 +32,7 @@ struct DigestPopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 440, height: 620)
+        .frame(width: 460, height: 680)
         .task {
             await session.refresh()
             syncPolicyFields()
@@ -38,12 +40,15 @@ struct DigestPopoverView: View {
         .onChange(of: session.policy) { _, _ in
             syncPolicyFields()
         }
+        .onChange(of: session.listFilter) { _, _ in
+            Task { await session.refresh() }
+        }
     }
 
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Jobs · P1")
+                Text("AI Jobs · P1.1")
                     .font(.headline)
                 Text(session.agentReachable ? "Agent online" : "Agent offline — start packages/agent")
                     .font(.caption)
@@ -69,47 +74,81 @@ struct DigestPopoverView: View {
         }
     }
 
+    private var filterBar: some View {
+        Picker("Filter", selection: $session.listFilter) {
+            Text("Hide noise").tag("hide_noise")
+            Text("Unlabeled").tag("unlabeled")
+            Text("Signal").tag("signal")
+            Text("ATS only").tag("ats_only")
+            Text("All").tag("all")
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     @ViewBuilder
     private var jobList: some View {
         if let jobs = session.digest?.jobs, !jobs.isEmpty {
             List(jobs) { job in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(job.title)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(job.title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(2)
+                        Spacer()
+                        Text(job.hostKind ?? "?")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.gray.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
                     HStack {
                         Text(job.company ?? "Unknown company")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(job.queryMatched)
+                        Text(job.label ?? "unlabeled")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
-                    if let description = job.description, !description.isEmpty {
-                        Text(description)
+                    if let mirrors = job.mirrors, mirrors.count > 1 {
+                        Text("\(mirrors.count) sources · canonical preferred")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
                     }
-                    Button("Open") {
-                        if let url = URL(string: job.url) {
-                            NSWorkspace.shared.open(url)
+                    HStack {
+                        Button("Open") {
+                            if let url = URL(string: job.url) {
+                                NSWorkspace.shared.open(url)
+                            }
                         }
+                        .buttonStyle(.link)
+                        Spacer()
+                        Button("Signal") {
+                            Task { await session.label(jobId: job.id, as: "signal") }
+                        }
+                        .tint(.green)
+                        Button("Noise") {
+                            Task { await session.label(jobId: job.id, as: "noise") }
+                        }
+                        .tint(.orange)
+                        Button("Dup") {
+                            Task { await session.label(jobId: job.id, as: "duplicate") }
+                        }
+                        .tint(.secondary)
                     }
-                    .buttonStyle(.link)
                     .font(.caption)
                 }
                 .padding(.vertical, 4)
             }
             .listStyle(.plain)
-            .frame(minHeight: 160)
+            .frame(minHeight: 200)
         } else {
             ContentUnavailableView(
-                "No jobs yet",
+                "No jobs in this filter",
                 systemImage: "briefcase",
-                description: Text("Persona graph plans bilingual remote/PJ searches. Tap Run now.")
+                description: Text("Run now, then label Signal/Noise to train the journal.")
             )
             .frame(minHeight: 120)
         }
@@ -122,6 +161,14 @@ struct DigestPopoverView: View {
                 Text("Manual queries").tag("manual_queries")
             }
             .pickerStyle(.segmented)
+
+            Picker("Cadence", selection: $cadenceKind) {
+                Text("Manual").tag("manual")
+                Text("Daily").tag("daily")
+                Text("Weekly").tag("weekly")
+                Text("Monthly").tag("monthly")
+            }
+            .pickerStyle(.menu)
 
             if mode == "manual_queries" {
                 Text("Queries (comma-separated)")
@@ -142,10 +189,6 @@ struct DigestPopoverView: View {
                 }
             }
 
-            Text("Cadence: \(session.policy?.cadence.kind ?? "manual") (scheduler active on agent)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
             Button("Save policy") {
                 Task { await savePolicy() }
             }
@@ -158,14 +201,14 @@ struct DigestPopoverView: View {
             Text("Planned searches")
                 .font(.caption.weight(.semibold))
             if let searches = session.plan?.searches, !searches.isEmpty {
-                ForEach(searches.prefix(6)) { item in
+                ForEach(searches.prefix(5)) { item in
                     Text("• [\(item.geoLocation)/\(item.lang)] \(item.query)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
             } else {
-                Text("No plan yet — open Policy and save, or wait for agent refresh.")
+                Text("No plan yet.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -198,12 +241,14 @@ struct DigestPopoverView: View {
         queriesText = policy.queries.joined(separator: ", ")
         geosText = policy.profile.preferredGeos.joined(separator: ", ")
         maxPlanned = policy.maxPlannedQueries
+        cadenceKind = policy.cadence.kind
     }
 
     private func savePolicy() async {
         guard var policy = session.policy else { return }
         policy.mode = mode
         policy.maxPlannedQueries = maxPlanned
+        policy.cadence = makeCadence(kind: cadenceKind, previous: policy.cadence)
         policy.profile.preferredGeos = geosText
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -219,5 +264,28 @@ struct DigestPopoverView: View {
             policy.queries = queries.isEmpty ? ["ios senior remote contractor"] : queries
         }
         await session.savePolicy(policy)
+    }
+
+    private func makeCadence(kind: String, previous: CadenceDTO) -> CadenceDTO {
+        switch kind {
+        case "daily":
+            return CadenceDTO(kind: "daily", hour: previous.hour ?? 9, minute: previous.minute ?? 0)
+        case "weekly":
+            return CadenceDTO(
+                kind: "weekly",
+                hour: previous.hour ?? 9,
+                minute: previous.minute ?? 0,
+                weekday: previous.weekday ?? 1
+            )
+        case "monthly":
+            return CadenceDTO(
+                kind: "monthly",
+                hour: previous.hour ?? 9,
+                minute: previous.minute ?? 0,
+                dayOfMonth: previous.dayOfMonth ?? 1
+            )
+        default:
+            return CadenceDTO(kind: "manual")
+        }
     }
 }

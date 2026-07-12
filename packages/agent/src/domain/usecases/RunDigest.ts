@@ -1,37 +1,23 @@
-import { createHash } from "node:crypto";
 import type { Digest } from "../entities/Digest.js";
-import type { JobListingDraft, JobOpportunity } from "../entities/JobOpportunity.js";
+import type { JobListingDraft } from "../entities/JobOpportunity.js";
 import type { JobRepository } from "../ports/JobRepository.js";
 import type { JobSearchPort } from "../ports/JobSearchPort.js";
 import type { PolicyRepository } from "../ports/PolicyRepository.js";
 import type { StatusGateway } from "../ports/StatusGateway.js";
+import type { FeedbackJournalPort } from "../ports/FeedbackJournalPort.js";
 import { QueryPlanner } from "../services/QueryPlanner.js";
+import { isDeniedHost } from "../services/HostPolicy.js";
+import { draftToOpportunity, mergeByFingerprint } from "../services/SignalPipeline.js";
 
 export interface RunDigestDeps {
   jobSearch: JobSearchPort;
   jobs: JobRepository;
   policies: PolicyRepository;
   status: StatusGateway;
+  journal?: FeedbackJournalPort;
   planner?: QueryPlanner;
   now?: () => Date;
   id?: () => string;
-}
-
-function jobIdFromUrl(url: string): string {
-  return createHash("sha256").update(url).digest("hex").slice(0, 16);
-}
-
-function toOpportunity(draft: JobListingDraft, discoveredAt: string): JobOpportunity {
-  return {
-    id: jobIdFromUrl(draft.url),
-    title: draft.title,
-    company: draft.company,
-    url: draft.url,
-    source: draft.source,
-    queryMatched: draft.queryMatched,
-    description: draft.description,
-    discoveredAt,
-  };
 }
 
 function derivePostRunStatus(jobCount: number): Digest["status"] {
@@ -50,7 +36,7 @@ export class RunDigest {
   }
 
   async execute(): Promise<Digest> {
-    const { jobSearch, jobs, policies, status } = this.deps;
+    const { jobSearch, jobs, policies, status, journal } = this.deps;
     const now = this.deps.now ?? (() => new Date());
     const newId = this.deps.id ?? (() => crypto.randomUUID());
 
@@ -67,6 +53,9 @@ export class RunDigest {
       const plan = this.planner.plan(policy);
       const discoveredAt = now().toISOString();
       const drafts: JobListingDraft[] = [];
+      const noisyHosts = new Set(
+        journal ? await journal.noisyHosts(2) : [],
+      );
 
       for (const planned of plan.searches) {
         const batch = await jobSearch.search({
@@ -82,13 +71,21 @@ export class RunDigest {
         );
       }
 
-      const byUrl = new Map<string, JobOpportunity>();
-      for (const draft of drafts) {
-        const job = toOpportunity(draft, discoveredAt);
-        byUrl.set(job.url, job);
-      }
+      const opportunities = drafts
+        .filter((d) => !isDeniedHost(d.url))
+        .filter((d) => {
+          try {
+            const host = new URL(d.url).hostname.toLowerCase().replace(/^www\./, "");
+            return !noisyHosts.has(host);
+          } catch {
+            return true;
+          }
+        })
+        .map((d) => draftToOpportunity(d, discoveredAt))
+        .filter((j): j is NonNullable<typeof j> => Boolean(j));
 
-      const upserted = await jobs.upsertJobs([...byUrl.values()]);
+      const merged = mergeByFingerprint(opportunities);
+      const upserted = await jobs.upsertJobs(merged);
       const digestStatus = derivePostRunStatus(upserted.length);
       const queriesRun = plan.searches.map((s) =>
         formatPlannedLine(s.query, s.geoLocation, s.lang),

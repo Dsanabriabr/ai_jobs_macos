@@ -1,14 +1,25 @@
 import Foundation
 
+struct JobSourceMirrorDTO: Codable, Equatable {
+    let url: String
+    let host: String
+    let kind: String
+}
+
 struct JobOpportunityDTO: Codable, Identifiable, Equatable {
     let id: String
+    let fingerprint: String?
     let title: String
     let company: String?
     let url: String
+    let host: String?
+    let hostKind: String?
     let source: String
     let queryMatched: String
     let description: String?
     let discoveredAt: String
+    let label: String?
+    let mirrors: [JobSourceMirrorDTO]?
 }
 
 struct PlannedSearchDTO: Codable, Equatable, Identifiable {
@@ -37,6 +48,7 @@ struct StatusResponse: Codable, Equatable {
 
 struct DigestResponse: Codable, Equatable {
     let digest: DigestDTO?
+    let filter: String?
 }
 
 struct CadenceDTO: Codable, Equatable {
@@ -139,4 +151,8 @@ struct PlanResponse: Codable, Equatable {
 
 struct RunResponse: Codable, Equatable {
     let digest: DigestDTO
+}
+
+struct LabelResponse: Codable, Equatable {
+    let job: JobOpportunityDTO
 }

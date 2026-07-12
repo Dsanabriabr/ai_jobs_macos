@@ -124,6 +124,21 @@ export class QueryPlanner {
       });
     }
 
+    // Prefer direct ATS indexes over aggregator SERPs.
+    const skill = joinLabels(skillsEn, 1) || "ios";
+    templates.unshift({
+      query: `${skill} senior remote site:gupy.io OR site:greenhouse.io OR site:lever.co OR site:ashbyhq.com`,
+      lang: "en",
+      rationale: "ATS-first site operators to reduce aggregator noise",
+    });
+    if (profile.languages.includes("pt-BR")) {
+      templates.unshift({
+        query: `vaga ios senior remoto site:gupy.io`,
+        lang: "pt",
+        rationale: "PT ATS-first on Gupy",
+      });
+    }
+
     const expanded: PlannedSearch[] = [];
     let geoIndex = 0;
     for (const template of templates) {
