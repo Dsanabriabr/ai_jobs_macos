@@ -15,15 +15,22 @@
 - `GET /policy/plan` + menu bar plan preview
 - Cadence scheduler (backend)
 
-## P1.1 — Signal quality (`feature/p1-signal-quality`) — current
+## P1.1 — Signal quality (`feature/p1-signal-quality`)
 
-- Host denylist (aggregators) + ATS preference / allowlist
-- Canonical job via fingerprint + mirror merge (same role across boards → one card)
-- Manual labels: `signal` | `noise` | `duplicate` → `feedback.jsonl` journal (Create ML corpus)
-- Noisy hosts from journal reinforce denylist at runtime
-- Listing filters: hide_noise / unlabeled / signal / ats_only / all
-- Cadence picker in menu bar (manual / daily / weekly / monthly)
-- Planner ATS-first `site:` queries (gupy / greenhouse / lever / ashby)
+- Host denylist + ATS preference (static — too biased toward Gupy; addressed in P1.2)
+- Canonical fingerprint + mirrors + Signal/Noise/Dup labels → `feedback.jsonl`
+- Listing filters + cadence picker in menu bar
+- Planner ATS-first `site:` queries (reduced aggregator noise, reduced source diversity)
+
+## P1.2 — Dual discovery & configurable sources (next)
+
+See [docs/P1_2_DUAL_DISCOVERY.md](P1_2_DUAL_DISCOVERY.md).
+
+- `SourcePolicy` editável (ATS on/off/weight — não hardcoded)
+- Lanes: **surface** + **ATS-targeted** + budget configurável
+- Follow/resolve: superfície → extrair apply ATS e cruzar fingerprint
+- Paginação Oxylabs (`pages` / `start_page`) + limites explícitos na UI
+- Dup só faz sentido cross-source (não “duplicata dentro do Gupy”)
 
 ## P2 — Intelligence v1 (Cursor)
 
