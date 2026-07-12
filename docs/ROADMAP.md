@@ -34,13 +34,13 @@ See [docs/P1_3_SURFACE_FIRST.md](P1_3_SURFACE_FIRST.md).
 - Diagnostics; ATS lane off by default; BR+remote surface queries
 - **Still:** many cells are hubs/search pages, not apply-able postings; company often Unknown → **not P2-ready**
 
-## P1.4 — Clean posting list (next — gate before P2)
+## P1.4 — Clean posting list (in progress — gate before P2)
 
 See [docs/P1_4_CLEAN_POSTINGS.md](P1_4_CLEAN_POSTINGS.md).
 
 - Distinguish **posting** vs **hub** (listing/search page ≠ signal)
-- Edit company/title/URL on row; persist with labels
-- Default UI: postings/signals only; hubs filtered or labeled `hub`
+- Edit company/title/URL/**logoUrl** on row; logo on cell left; persist with labels
+- Default UI filter: **postings**; hubs filtered or labeled `hub`
 - `signal` only valid on `pageKind=posting`
 - Human enrichment loop before any Cursor spend
 - **P2 blocked** until listing is clean enough to not waste tokens on noise/hubs

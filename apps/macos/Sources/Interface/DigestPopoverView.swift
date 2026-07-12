@@ -17,6 +17,7 @@ struct DigestPopoverView: View {
     @State private var cadenceKind = "manual"
     @State private var atsTargets: [AtsTargetDTO] = []
     @State private var showPolicy = false
+    @State private var editingJob: JobOpportunityDTO?
 
     private var atsShare: Double {
         max(0, 1 - surfaceShare - followShare)
@@ -45,7 +46,7 @@ struct DigestPopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 480, height: 740)
+        .frame(width: 520, height: 760)
         .task {
             await session.refresh()
             syncPolicyFields()
@@ -56,12 +57,22 @@ struct DigestPopoverView: View {
         .onChange(of: session.listFilter) { _, _ in
             Task { await session.refresh() }
         }
+        .sheet(item: $editingJob) { job in
+            JobEditSheet(job: job) { patch in
+                Task {
+                    await session.updateJob(id: job.id, patch: patch)
+                    editingJob = nil
+                }
+            } onCancel: {
+                editingJob = nil
+            }
+        }
     }
 
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Jobs · P1.3")
+                Text("AI Jobs · P1.4")
                     .font(.headline)
                 Text(session.agentReachable ? "Agent online" : "Agent offline — start packages/agent")
                     .font(.caption)
@@ -89,9 +100,11 @@ struct DigestPopoverView: View {
 
     private var filterBar: some View {
         Picker("Filter", selection: $session.listFilter) {
-            Text("Hide noise").tag("hide_noise")
-            Text("Unlabeled").tag("unlabeled")
+            Text("Postings").tag("postings")
             Text("Signal").tag("signal")
+            Text("Hubs").tag("hubs")
+            Text("Unlabeled").tag("unlabeled")
+            Text("Hide noise").tag("hide_noise")
             Text("ATS only").tag("ats_only")
             Text("All").tag("all")
         }
@@ -114,57 +127,70 @@ struct DigestPopoverView: View {
     private var jobList: some View {
         if let jobs = session.digest?.jobs, !jobs.isEmpty {
             List(jobs) { job in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(job.title)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(2)
-                        Spacer()
-                        Text(job.hostKind ?? "?")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-                    HStack {
-                        Text(job.company ?? "Unknown company")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(job.label ?? "unlabeled")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let mirrors = job.mirrors, mirrors.count > 1 {
-                        Text("\(mirrors.count) sources · cross-host")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Button("Open") {
-                            if let url = URL(string: job.url) {
-                                NSWorkspace.shared.open(url)
+                HStack(alignment: .top, spacing: 10) {
+                    CompanyLogoView(logoUrl: job.logoUrl)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(job.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(2)
+                            Spacer()
+                            Text(job.pageKind ?? "?")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(pageKindChip(job.pageKind))
+                                .clipShape(Capsule())
+                        }
+                        HStack {
+                            Text(job.company ?? "Unknown company")
+                                .font(.caption)
+                                .foregroundStyle(job.company == nil ? .orange : .secondary)
+                            Spacer()
+                            Text(job.label ?? "unlabeled")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let mirrors = job.mirrors, mirrors.count > 1 {
+                            Text("\(mirrors.count) sources · cross-host")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Button("Open") {
+                                if let url = URL(string: job.url) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.link)
+                            Button("Edit") {
+                                editingJob = job
+                            }
+                            .buttonStyle(.link)
+                            Spacer()
+                            if job.pageKind == "posting" {
+                                Button("Signal") {
+                                    Task { await session.label(jobId: job.id, as: "signal") }
+                                }
+                                .tint(.green)
+                            }
+                            Button("Hub") {
+                                Task { await session.label(jobId: job.id, as: "hub") }
+                            }
+                            .tint(.blue)
+                            Button("Noise") {
+                                Task { await session.label(jobId: job.id, as: "noise") }
+                            }
+                            .tint(.orange)
+                            if canMarkDuplicate(job) {
+                                Button("Dup") {
+                                    Task { await session.label(jobId: job.id, as: "duplicate") }
+                                }
+                                .tint(.secondary)
                             }
                         }
-                        .buttonStyle(.link)
-                        Spacer()
-                        Button("Signal") {
-                            Task { await session.label(jobId: job.id, as: "signal") }
-                        }
-                        .tint(.green)
-                        Button("Noise") {
-                            Task { await session.label(jobId: job.id, as: "noise") }
-                        }
-                        .tint(.orange)
-                        if canMarkDuplicate(job) {
-                            Button("Dup") {
-                                Task { await session.label(jobId: job.id, as: "duplicate") }
-                            }
-                            .tint(.secondary)
-                        }
+                        .font(.caption)
                     }
-                    .font(.caption)
                 }
                 .padding(.vertical, 4)
             }
@@ -174,9 +200,17 @@ struct DigestPopoverView: View {
             ContentUnavailableView(
                 "No jobs in this filter",
                 systemImage: "briefcase",
-                description: Text("Run surface-first discovery. Check diagnostics above if empty.")
+                description: Text("Try Hubs or All, or Run now. Mark hubs and edit company/logo for training.")
             )
             .frame(minHeight: 120)
+        }
+    }
+
+    private func pageKindChip(_ kind: String?) -> Color {
+        switch kind {
+        case "posting": return Color.green.opacity(0.2)
+        case "hub": return Color.blue.opacity(0.2)
+        default: return Color.gray.opacity(0.15)
         }
     }
 
@@ -387,3 +421,118 @@ struct DigestPopoverView: View {
         }
     }
 }
+
+private struct CompanyLogoView: View {
+    let logoUrl: String?
+
+    var body: some View {
+        Group {
+            if let logoUrl, let url = URL(string: logoUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                    case .failure:
+                        placeholder
+                    case .empty:
+                        ProgressView()
+                            .controlSize(.small)
+                    @unknown default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: 36, height: 36)
+        .background(Color.gray.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "building.2")
+            .font(.system(size: 14))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct JobEditSheet: View {
+    let job: JobOpportunityDTO
+    let onSave: (JobUpdatePatchDTO) -> Void
+    let onCancel: () -> Void
+
+    @State private var title: String
+    @State private var company: String
+    @State private var url: String
+    @State private var logoUrl: String
+    @State private var pageKind: String
+
+    init(
+        job: JobOpportunityDTO,
+        onSave: @escaping (JobUpdatePatchDTO) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.job = job
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _title = State(initialValue: job.title)
+        _company = State(initialValue: job.company ?? "")
+        _url = State(initialValue: job.url)
+        _logoUrl = State(initialValue: job.logoUrl ?? "")
+        _pageKind = State(initialValue: job.pageKind ?? "unknown")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit job (human training)")
+                .font(.headline)
+
+            HStack(alignment: .top, spacing: 12) {
+                CompanyLogoView(logoUrl: logoUrl.isEmpty ? nil : logoUrl)
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Title", text: $title)
+                    TextField("Company", text: $company)
+                    TextField("Apply URL", text: $url)
+                    TextField("Logo URL", text: $logoUrl)
+                    Picker("Page kind", selection: $pageKind) {
+                        Text("Posting").tag("posting")
+                        Text("Hub").tag("hub")
+                        Text("Unknown").tag("unknown")
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            HStack {
+                Button("Cancel", action: onCancel)
+                Spacer()
+                Button("Save") {
+                    onSave(
+                        JobUpdatePatchDTO(
+                            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                            company: company.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? nil
+                                : company.trimmingCharacters(in: .whitespacesAndNewlines),
+                            url: url.trimmingCharacters(in: .whitespacesAndNewlines),
+                            logoUrl: logoUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? nil
+                                : logoUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+                            pageKind: pageKind,
+                            clearNullables: true
+                        )
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 440)
+    }
+}
+

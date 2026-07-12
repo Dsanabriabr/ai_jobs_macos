@@ -17,6 +17,10 @@ export class LabelJob {
     const existing = await this.jobs.getJob(input.jobId);
     if (!existing) throw new Error(`Job not found: ${input.jobId}`);
 
+    if (input.label === "signal" && existing.pageKind !== "posting") {
+      throw new Error("signal requires pageKind=posting — edit URL/page kind or mark as Hub");
+    }
+
     if (input.label === "duplicate") {
       const hosts = new Set(existing.mirrors.map((m) => m.host));
       if (hosts.size < 2) {
@@ -38,7 +42,11 @@ export class LabelJob {
       url: job.url,
       host: job.host,
       title: job.title,
+      company: job.company,
+      pageKind: job.pageKind,
+      logoUrl: job.logoUrl,
       label: input.label,
+      action: "label",
       queryMatched: job.queryMatched || null,
     });
 

@@ -5,6 +5,7 @@ import { GetMenuBarStatus } from "../domain/usecases/GetMenuBarStatus.js";
 import { LabelJob } from "../domain/usecases/LabelJob.js";
 import { PreviewSearchPlan } from "../domain/usecases/PreviewSearchPlan.js";
 import { RunDigest } from "../domain/usecases/RunDigest.js";
+import { UpdateJob } from "../domain/usecases/UpdateJob.js";
 import { QueryPlanner } from "../domain/services/QueryPlanner.js";
 import {
   OxylabsWebScraperSearchAdapter,
@@ -29,6 +30,7 @@ export interface AgentRuntime {
   configureSearchPolicy: ConfigureSearchPolicy;
   previewSearchPlan: PreviewSearchPlan;
   labelJob: LabelJob;
+  updateJob: UpdateJob;
   policies: FilePolicyRepository;
   jobs: FileJobRepository;
   journal: FileFeedbackJournal;
@@ -58,6 +60,7 @@ export function createAgentRuntime(config: AgentConfig): AgentRuntime {
     configureSearchPolicy: new ConfigureSearchPolicy(policies),
     previewSearchPlan: new PreviewSearchPlan(policies, planner),
     labelJob: new LabelJob(jobs, journal),
+    updateJob: new UpdateJob(jobs, journal),
     policies,
     jobs,
     journal,

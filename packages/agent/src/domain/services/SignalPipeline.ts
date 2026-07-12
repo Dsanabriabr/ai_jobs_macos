@@ -8,6 +8,7 @@ import {
   isDeniedHost,
   sortByHostRank,
 } from "./HostPolicy.js";
+import { inferPageKind } from "./PageKind.js";
 
 function jobIdFromFingerprint(fingerprint: string): string {
   return fingerprint;
@@ -98,15 +99,18 @@ export function draftToOpportunity(
     fingerprint,
     title: draft.title,
     company: draft.company,
+    logoUrl: null,
     url: draft.url,
     host,
     hostKind,
+    pageKind: inferPageKind(draft.url),
     source: draft.source,
     queryMatched: draft.queryMatched,
     description: draft.description,
     discoveredAt,
     label: "unlabeled",
     mirrors: [mirrorFromUrl(draft.url)],
+    enrichedByUser: false,
   };
 }
 
@@ -133,6 +137,7 @@ export function mergeByFingerprint(jobs: JobOpportunity[]): JobOpportunity[] {
     const primary = preferNew ? job : existing;
     const secondary = preferNew ? existing : job;
 
+    const enriched = primary.enrichedByUser || secondary.enrichedByUser;
     map.set(job.fingerprint, {
       ...primary,
       id: job.fingerprint,
@@ -141,6 +146,14 @@ export function mergeByFingerprint(jobs: JobOpportunity[]): JobOpportunity[] {
       queryMatched: primary.queryMatched || secondary.queryMatched,
       description: primary.description ?? secondary.description,
       company: primary.company ?? secondary.company,
+      logoUrl: primary.logoUrl ?? secondary.logoUrl,
+      pageKind:
+        primary.pageKind !== "unknown"
+          ? primary.pageKind
+          : secondary.pageKind !== "unknown"
+            ? secondary.pageKind
+            : primary.pageKind,
+      enrichedByUser: enriched,
       discoveredAt:
         primary.discoveredAt <= secondary.discoveredAt
           ? primary.discoveredAt
@@ -159,19 +172,25 @@ export function mergeByFingerprint(jobs: JobOpportunity[]): JobOpportunity[] {
 
 export function filterJobs(
   jobs: JobOpportunity[],
-  filter: import("../entities/JobOpportunity.js").ListingFilter = "hide_noise",
+  filter: import("../entities/JobOpportunity.js").ListingFilter = "postings",
 ): JobOpportunity[] {
   switch (filter) {
     case "all":
       return jobs;
     case "hide_noise":
-      return jobs.filter((j) => j.label !== "noise");
+      return jobs.filter((j) => j.label !== "noise" && j.label !== "hub");
     case "signal":
-      return jobs.filter((j) => j.label === "signal");
+      return jobs.filter((j) => j.label === "signal" && j.pageKind === "posting");
     case "unlabeled":
       return jobs.filter((j) => j.label === "unlabeled");
     case "ats_only":
       return jobs.filter((j) => j.hostKind === "ats" && j.label !== "noise");
+    case "postings":
+      return jobs.filter(
+        (j) => j.pageKind === "posting" && j.label !== "noise" && j.label !== "hub",
+      );
+    case "hubs":
+      return jobs.filter((j) => j.pageKind === "hub" || j.label === "hub");
     default:
       return jobs;
   }

@@ -9,6 +9,7 @@ import type {
 import type { JobRepository } from "../../domain/ports/JobRepository.js";
 import { filterJobs, mergeByFingerprint } from "../../domain/services/SignalPipeline.js";
 import { classifyHost, extractHost } from "../../domain/services/HostPolicy.js";
+import { inferPageKind } from "../../domain/services/PageKind.js";
 
 interface StoreShape {
   jobs: Record<string, JobOpportunity>;
@@ -26,9 +27,11 @@ function normalizeJob(raw: Partial<JobOpportunity> & { url: string; title: strin
     fingerprint,
     title: raw.title,
     company: raw.company ?? null,
+    logoUrl: raw.logoUrl ?? null,
     url: raw.url,
     host,
     hostKind,
+    pageKind: raw.pageKind ?? inferPageKind(raw.url),
     source: raw.source ?? "unknown",
     queryMatched: raw.queryMatched ?? "",
     description: raw.description ?? null,
@@ -43,6 +46,15 @@ function normalizeJob(raw: Partial<JobOpportunity> & { url: string; title: strin
           kind: hostKind,
         },
       ],
+    enrichedByUser: raw.enrichedByUser ?? false,
+  };
+}
+
+function syncDigestJob(store: StoreShape, updated: JobOpportunity): void {
+  if (!store.latestDigest) return;
+  store.latestDigest = {
+    ...store.latestDigest,
+    jobs: store.latestDigest.jobs.map((j) => (j.id === updated.id ? updated : normalizeJob(j))),
   };
 }
 
@@ -90,6 +102,17 @@ export class FileJobRepository implements JobRepository {
       if (existing.label !== "unlabeled") {
         merged.label = existing.label;
       }
+      // Preserve human enrichment across re-runs.
+      if (existing.enrichedByUser) {
+        merged.title = existing.title;
+        merged.company = existing.company;
+        merged.logoUrl = existing.logoUrl;
+        merged.url = existing.url;
+        merged.host = existing.host;
+        merged.hostKind = existing.hostKind;
+        merged.pageKind = existing.pageKind;
+        merged.enrichedByUser = true;
+      }
       store.jobs[job.id] = merged;
     }
 
@@ -102,7 +125,7 @@ export class FileJobRepository implements JobRepository {
     return ids.map((id) => store.jobs[id]).filter((j): j is JobOpportunity => Boolean(j));
   }
 
-  async listJobs(filter: ListingFilter = "hide_noise"): Promise<JobOpportunity[]> {
+  async listJobs(filter: ListingFilter = "postings"): Promise<JobOpportunity[]> {
     const store = await this.read();
     return filterJobs(Object.values(store.jobs), filter);
   }
@@ -116,16 +139,23 @@ export class FileJobRepository implements JobRepository {
     const store = await this.read();
     const job = store.jobs[id];
     if (!job) throw new Error(`Job not found: ${id}`);
-    const updated = { ...job, label };
+    const updated: JobOpportunity = {
+      ...job,
+      label,
+      pageKind: label === "hub" ? "hub" : job.pageKind,
+    };
     store.jobs[id] = updated;
+    syncDigestJob(store, updated);
+    await this.write(store);
+    return updated;
+  }
 
-    if (store.latestDigest) {
-      store.latestDigest = {
-        ...store.latestDigest,
-        jobs: store.latestDigest.jobs.map((j) => (j.id === id ? updated : normalizeJob(j))),
-      };
-    }
-
+  async updateJob(id: string, job: JobOpportunity): Promise<JobOpportunity> {
+    const store = await this.read();
+    if (!store.jobs[id]) throw new Error(`Job not found: ${id}`);
+    const updated = normalizeJob({ ...job, id, fingerprint: job.fingerprint || id });
+    store.jobs[id] = updated;
+    syncDigestJob(store, updated);
     await this.write(store);
     return updated;
   }

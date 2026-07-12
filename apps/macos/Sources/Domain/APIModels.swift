@@ -11,15 +11,48 @@ struct JobOpportunityDTO: Codable, Identifiable, Equatable {
     let fingerprint: String?
     let title: String
     let company: String?
+    let logoUrl: String?
     let url: String
     let host: String?
     let hostKind: String?
+    let pageKind: String?
     let source: String
     let queryMatched: String
     let description: String?
     let discoveredAt: String
     let label: String?
     let mirrors: [JobSourceMirrorDTO]?
+    let enrichedByUser: Bool?
+}
+
+struct JobUpdatePatchDTO: Encodable, Equatable {
+    var title: String?
+    var company: String?
+    var url: String?
+    var logoUrl: String?
+    var pageKind: String?
+    var label: String?
+    /// When true, encodes nil company/logoUrl as JSON null (clear).
+    var clearNullables = false
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(url, forKey: .url)
+        try container.encodeIfPresent(pageKind, forKey: .pageKind)
+        try container.encodeIfPresent(label, forKey: .label)
+        if clearNullables {
+            try container.encode(company, forKey: .company)
+            try container.encode(logoUrl, forKey: .logoUrl)
+        } else {
+            try container.encodeIfPresent(company, forKey: .company)
+            try container.encodeIfPresent(logoUrl, forKey: .logoUrl)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, company, url, logoUrl, pageKind, label
+    }
 }
 
 struct PlannedSearchDTO: Codable, Equatable, Identifiable {

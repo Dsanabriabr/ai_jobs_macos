@@ -12,7 +12,7 @@ final class AppSession: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var lastError: String?
     @Published var agentReachable = false
-    @Published var listFilter = "hide_noise"
+    @Published var listFilter = "postings"
 
     private let client: any AgentAPIClient
     private var pollTask: Task<Void, Never>?
@@ -81,6 +81,16 @@ final class AppSession: ObservableObject {
     func label(jobId: String, as label: String) async {
         do {
             _ = try await client.labelJob(id: jobId, label: label)
+            digest = try await client.latestDigest(filter: listFilter)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func updateJob(id: String, patch: JobUpdatePatchDTO) async {
+        do {
+            _ = try await client.updateJob(id: id, patch: patch)
             digest = try await client.latestDigest(filter: listFilter)
             lastError = nil
         } catch {

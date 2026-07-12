@@ -1,3 +1,5 @@
+import type { PageKind } from "../entities/JobOpportunity.js";
+
 export interface FeedbackEvent {
   id: string;
   at: string;
@@ -6,7 +8,12 @@ export interface FeedbackEvent {
   url: string;
   host: string;
   title: string;
-  label: "signal" | "noise" | "duplicate";
+  company: string | null;
+  pageKind: PageKind;
+  logoUrl: string | null;
+  /** Label applied, or "edit" when only fields changed. */
+  label: "signal" | "hub" | "noise" | "duplicate" | "edit";
+  action: "label" | "edit";
   queryMatched: string | null;
 }
 

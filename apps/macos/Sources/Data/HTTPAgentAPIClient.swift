@@ -10,6 +10,7 @@ protocol AgentAPIClient {
     func previewPlan() async throws -> SearchPlanDTO
     func triggerRun() async throws -> DigestDTO
     func labelJob(id: String, label: String) async throws -> JobOpportunityDTO
+    func updateJob(id: String, patch: JobUpdatePatchDTO) async throws -> JobOpportunityDTO
 }
 
 enum AgentAPIError: LocalizedError {
@@ -106,6 +107,12 @@ struct HTTPAgentAPIClient: AgentAPIClient {
             method: "POST",
             body: LabelBody(label: label)
         )
+        return response.job
+    }
+
+    func updateJob(id: String, patch: JobUpdatePatchDTO) async throws -> JobOpportunityDTO {
+        let url = baseURL.appending(path: "jobs").appending(path: id)
+        let response: LabelResponse = try await send(url: url, method: "PATCH", body: patch)
         return response.job
     }
 

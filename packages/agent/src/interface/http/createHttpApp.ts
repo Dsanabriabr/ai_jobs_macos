@@ -7,12 +7,23 @@ import { filterJobs } from "../../domain/services/SignalPipeline.js";
 import type { ListingFilter } from "../../domain/entities/JobOpportunity.js";
 
 const labelSchema = z.object({
-  label: z.enum(["signal", "noise", "duplicate"]),
+  label: z.enum(["signal", "hub", "noise", "duplicate"]),
 });
 
+const jobPatchSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    company: z.string().nullable().optional(),
+    url: z.string().url().optional(),
+    logoUrl: z.string().url().nullable().optional(),
+    pageKind: z.enum(["posting", "hub", "unknown"]).optional(),
+    label: z.enum(["signal", "hub", "noise", "duplicate"]).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "empty patch" });
+
 const filterSchema = z
-  .enum(["all", "hide_noise", "signal", "unlabeled", "ats_only"])
-  .default("hide_noise");
+  .enum(["all", "hide_noise", "signal", "unlabeled", "ats_only", "postings", "hubs"])
+  .default("postings");
 
 export function createHttpApp(runtime: AgentRuntime): Hono {
   const app = new Hono();
@@ -21,16 +32,16 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
     "*",
     cors({
       origin: "*",
-      allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
+      allowMethods: ["GET", "PUT", "POST", "PATCH", "OPTIONS"],
     }),
   );
 
-  app.get("/health", (c) => c.json({ ok: true, phase: "P1.3" }));
+  app.get("/health", (c) => c.json({ ok: true, phase: "P1.4" }));
 
   app.get("/status", (c) => c.json(runtime.getMenuBarStatus.execute()));
 
   app.get("/digest/latest", async (c) => {
-    const filter = filterSchema.parse(c.req.query("filter") ?? "hide_noise");
+    const filter = filterSchema.parse(c.req.query("filter") ?? "postings");
     const digest = await runtime.getLatestDigest.execute();
     if (!digest) return c.json({ digest: null, filter });
     return c.json({
@@ -43,7 +54,7 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
   });
 
   app.get("/jobs", async (c) => {
-    const filter = filterSchema.parse(c.req.query("filter") ?? "hide_noise");
+    const filter = filterSchema.parse(c.req.query("filter") ?? "postings");
     const jobs = await runtime.listJobsFiltered(filter as ListingFilter);
     return c.json({ filter, jobs });
   });
@@ -58,6 +69,25 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
       const job = await runtime.labelJob.execute({
         jobId: c.req.param("id"),
         label: parsed.data.label,
+      });
+      return c.json({ job });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = message.includes("not found") ? 404 : 400;
+      return c.json({ error: message }, status);
+    }
+  });
+
+  app.patch("/jobs/:id", async (c) => {
+    const body = await c.req.json();
+    const parsed = jobPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.flatten() }, 400);
+    }
+    try {
+      const job = await runtime.updateJob.execute({
+        jobId: c.req.param("id"),
+        patch: parsed.data,
       });
       return c.json({ job });
     } catch (error) {
