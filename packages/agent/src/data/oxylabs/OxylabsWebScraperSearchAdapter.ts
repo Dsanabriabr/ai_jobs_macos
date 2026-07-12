@@ -1,5 +1,9 @@
 import type { JobListingDraft } from "../../domain/entities/JobOpportunity.js";
-import type { JobSearchPort, JobSearchQuery } from "../../domain/ports/JobSearchPort.js";
+import type {
+  AtsLinkResolverPort,
+  JobSearchPort,
+  JobSearchQuery,
+} from "../../domain/ports/JobSearchPort.js";
 import { classifyHost, isDeniedHost } from "../../domain/services/HostPolicy.js";
 
 const REALTIME_URL = "https://realtime.oxylabs.io/v1/queries";
@@ -57,58 +61,81 @@ function extractOrganic(payload: unknown): OrganicResult[] {
   const results = root?.results;
   if (!Array.isArray(results) || results.length === 0) return [];
 
-  const first = asObject(results[0]);
-  let content: unknown = first?.content;
-
-  if (typeof content === "string") {
-    try {
-      content = JSON.parse(content);
-    } catch {
-      return [];
+  const organics: OrganicResult[] = [];
+  for (const entry of results) {
+    const first = asObject(entry);
+    let content: unknown = first?.content;
+    if (typeof content === "string") {
+      try {
+        content = JSON.parse(content);
+      } catch {
+        continue;
+      }
+    }
+    const contentObj = asObject(content);
+    const nested = asObject(contentObj?.results);
+    const organic = nested?.organic;
+    if (Array.isArray(organic)) {
+      organics.push(...(organic as OrganicResult[]));
     }
   }
-
-  const contentObj = asObject(content);
-  const nested = asObject(contentObj?.results);
-  const organic = nested?.organic;
-  if (!Array.isArray(organic)) return [];
-  return organic as OrganicResult[];
+  return organics;
 }
 
-export class OxylabsWebScraperSearchAdapter implements JobSearchPort {
+function extractHtml(payload: unknown): string {
+  const root = asObject(payload);
+  const results = root?.results;
+  if (!Array.isArray(results) || results.length === 0) return "";
+  const first = asObject(results[0]);
+  const content = first?.content;
+  if (typeof content === "string") return content;
+  if (content && typeof content === "object") {
+    return JSON.stringify(content);
+  }
+  return "";
+}
+
+function extractAtsUrlsFromHtml(html: string, allowedHostSuffixes: string[]): string[] {
+  const hrefRegex = /https?:\/\/[^\s"'<>]+/gi;
+  const found = html.match(hrefRegex) ?? [];
+  const cleaned = found.map((u) => u.replace(/[),.;]+$/g, ""));
+  const allowed = cleaned.filter((url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return allowedHostSuffixes.some(
+        (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+      );
+    } catch {
+      return false;
+    }
+  });
+  return [...new Set(allowed)];
+}
+
+export class OxylabsWebScraperSearchAdapter implements JobSearchPort, AtsLinkResolverPort {
   constructor(private readonly credentials: OxylabsWebScraperCredentials) {
     if (!credentials.username.trim() || !credentials.password) {
       throw new Error("OXYLABS_USERNAME and OXYLABS_PASSWORD are required");
     }
   }
 
-  async search(input: JobSearchQuery): Promise<JobListingDraft[]> {
-    // If planner already scoped with site:, don't append noisy "jobs hiring".
-    const hasSiteOperator = /\bsite:/i.test(input.query);
-    const jobOrientedQuery = hasSiteOperator ? input.query : `${input.query} jobs hiring`;
-    const body = {
-      source: "google_search",
-      query: jobOrientedQuery,
-      parse: true,
-      limit: Math.min(Math.max(input.limit, 1), 20),
-      geo_location: input.geoLocation ?? "Brazil",
-    };
-
-    const auth = Buffer.from(
+  private authHeader(): string {
+    return `Basic ${Buffer.from(
       `${this.credentials.username}:${this.credentials.password}`,
       "utf8",
-    ).toString("base64");
+    ).toString("base64")}`;
+  }
 
+  private async postQuery(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; payload: unknown; rawText: string }> {
     const response = await fetch(REALTIME_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
+        Authorization: this.authHeader(),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-
     const rawText = await response.text();
     let payload: unknown;
     try {
@@ -118,19 +145,37 @@ export class OxylabsWebScraperSearchAdapter implements JobSearchPort {
         `Oxylabs returned non-JSON (HTTP ${response.status}): ${rawText.slice(0, 240)}`,
       );
     }
+    return { ok: response.ok, status: response.status, payload, rawText };
+  }
 
-    if (!response.ok) {
+  async search(input: JobSearchQuery): Promise<JobListingDraft[]> {
+    const hasSiteOperator = /\bsite:/i.test(input.query);
+    const jobOrientedQuery = hasSiteOperator ? input.query : `${input.query} jobs hiring`;
+    const pages = Math.min(Math.max(input.pages ?? 1, 1), 5);
+    const startPage = Math.min(Math.max(input.startPage ?? 1, 1), 10);
+
+    const { ok, status, payload, rawText } = await this.postQuery({
+      source: "google_search",
+      query: jobOrientedQuery,
+      parse: true,
+      limit: Math.min(Math.max(input.limit, 1), 20),
+      pages,
+      start_page: startPage,
+      geo_location: input.geoLocation ?? "Brazil",
+    });
+
+    if (!ok) {
       const detail = asObject(payload);
       const message =
         (typeof detail?.message === "string" && detail.message) ||
         (typeof detail?.error === "string" && detail.error) ||
         rawText.slice(0, 240);
-      if (response.status === 401) {
+      if (status === 401) {
         throw new Error(
-          `Oxylabs auth failed (401). Check OXYLABS_USERNAME / OXYLABS_PASSWORD (Web Scraper API user, not dashboard login). ${message}`,
+          `Oxylabs auth failed (401). Check OXYLABS_USERNAME / OXYLABS_PASSWORD. ${message}`,
         );
       }
-      throw new Error(`Oxylabs HTTP ${response.status}: ${message}`);
+      throw new Error(`Oxylabs HTTP ${status}: ${message}`);
     }
 
     const organic = extractOrganic(payload);
@@ -150,5 +195,23 @@ export class OxylabsWebScraperSearchAdapter implements JobSearchPort {
         } satisfies JobListingDraft;
       })
       .filter((row) => looksLikeJobPosting(row.title, row.url, row.description));
+  }
+
+  async resolveAtsApplyLinks(url: string, allowedHostSuffixes: string[]): Promise<string[]> {
+    if (allowedHostSuffixes.length === 0) return [];
+    const { ok, status, payload, rawText } = await this.postQuery({
+      source: "universal",
+      url,
+      parse: false,
+    });
+    if (!ok) {
+      const detail = asObject(payload);
+      const message =
+        (typeof detail?.message === "string" && detail.message) ||
+        rawText.slice(0, 200);
+      throw new Error(`Oxylabs resolve HTTP ${status}: ${message}`);
+    }
+    const html = extractHtml(payload);
+    return extractAtsUrlsFromHtml(html, allowedHostSuffixes);
   }
 }

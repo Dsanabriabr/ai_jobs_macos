@@ -22,15 +22,15 @@
 - Listing filters + cadence picker in menu bar
 - Planner ATS-first `site:` queries (reduced aggregator noise, reduced source diversity)
 
-## P1.2 — Dual discovery & configurable sources (next)
+## P1.2 — Dual discovery & configurable sources (`feature/p1-dual-discovery`) — current
 
 See [docs/P1_2_DUAL_DISCOVERY.md](P1_2_DUAL_DISCOVERY.md).
 
-- `SourcePolicy` editável (ATS on/off/weight — não hardcoded)
-- Lanes: **surface** + **ATS-targeted** + budget configurável
-- Follow/resolve: superfície → extrair apply ATS e cruzar fingerprint
-- Paginação Oxylabs (`pages` / `start_page`) + limites explícitos na UI
-- Dup só faz sentido cross-source (não “duplicata dentro do Gupy”)
+- `SourcePolicy` editável (ATS on/off/weight)
+- Lanes: **surface** + **ATS** + follow budget
+- Follow/resolve: superfície → extrair apply ATS
+- Paginação Oxylabs (`pages`) + limites na UI
+- Dup só cross-source (2+ hosts)
 
 ## P2 — Intelligence v1 (Cursor)
 

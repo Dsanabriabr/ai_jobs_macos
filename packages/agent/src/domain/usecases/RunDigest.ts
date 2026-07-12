@@ -1,16 +1,17 @@
 import type { Digest } from "../entities/Digest.js";
 import type { JobListingDraft } from "../entities/JobOpportunity.js";
 import type { JobRepository } from "../ports/JobRepository.js";
-import type { JobSearchPort } from "../ports/JobSearchPort.js";
+import type { AtsLinkResolverPort, JobSearchPort } from "../ports/JobSearchPort.js";
 import type { PolicyRepository } from "../ports/PolicyRepository.js";
 import type { StatusGateway } from "../ports/StatusGateway.js";
 import type { FeedbackJournalPort } from "../ports/FeedbackJournalPort.js";
 import { QueryPlanner } from "../services/QueryPlanner.js";
-import { isDeniedHost } from "../services/HostPolicy.js";
+import { classifyHost, isDeniedHost } from "../services/HostPolicy.js";
 import { draftToOpportunity, mergeByFingerprint } from "../services/SignalPipeline.js";
 
 export interface RunDigestDeps {
   jobSearch: JobSearchPort;
+  atsResolver: AtsLinkResolverPort;
   jobs: JobRepository;
   policies: PolicyRepository;
   status: StatusGateway;
@@ -24,8 +25,26 @@ function derivePostRunStatus(jobCount: number): Digest["status"] {
   return jobCount > 0 ? "attention" : "idle";
 }
 
-function formatPlannedLine(query: string, geo: string, lang: string): string {
-  return `[${geo}/${lang}] ${query}`;
+function formatPlannedLine(query: string, geo: string, lang: string, lane: string): string {
+  return `[${lane}/${geo}/${lang}] ${query}`;
+}
+
+function isFollowCandidate(url: string): boolean {
+  if (isDeniedHost(url)) return false;
+  const kind = classifyHost(url);
+  if (kind === "ats") return false;
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    return (
+      path.includes("career") ||
+      path.includes("job") ||
+      path.includes("vaga") ||
+      path.includes("talent") ||
+      path.includes("oportunidad")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export class RunDigest {
@@ -36,7 +55,7 @@ export class RunDigest {
   }
 
   async execute(): Promise<Digest> {
-    const { jobSearch, jobs, policies, status, journal } = this.deps;
+    const { jobSearch, atsResolver, jobs, policies, status, journal } = this.deps;
     const now = this.deps.now ?? (() => new Date());
     const newId = this.deps.id ?? (() => crypto.randomUUID());
 
@@ -53,22 +72,70 @@ export class RunDigest {
       const plan = this.planner.plan(policy);
       const discoveredAt = now().toISOString();
       const drafts: JobListingDraft[] = [];
-      const noisyHosts = new Set(
-        journal ? await journal.noisyHosts(2) : [],
-      );
+      const noisyHosts = new Set(journal ? await journal.noisyHosts(2) : []);
+      const followSlots = plan.searches.filter((s) => s.lane === "follow").length;
+      const searchSlots = plan.searches.filter((s) => s.lane !== "follow");
+      const surfaceDrafts: JobListingDraft[] = [];
 
-      for (const planned of plan.searches) {
+      for (const planned of searchSlots) {
         const batch = await jobSearch.search({
           query: planned.query,
           limit: policy.resultLimitPerQuery,
           geoLocation: planned.geoLocation,
+          pages: policy.sources.maxPagesPerQuery,
+          startPage: 1,
         });
-        drafts.push(
-          ...batch.map((item) => ({
-            ...item,
-            queryMatched: formatPlannedLine(planned.query, planned.geoLocation, planned.lang),
-          })),
-        );
+        const tagged = batch.map((item) => ({
+          ...item,
+          queryMatched: formatPlannedLine(
+            planned.query,
+            planned.geoLocation,
+            planned.lang,
+            planned.lane,
+          ),
+        }));
+        drafts.push(...tagged);
+        if (planned.lane === "surface") {
+          surfaceDrafts.push(...tagged);
+        }
+      }
+
+      // Follow/resolve: open promising surface pages and extract ATS apply URLs.
+      const maxFollow = Math.min(
+        policy.sources.maxFollowResolves,
+        followSlots || policy.sources.maxFollowResolves,
+      );
+      const allowedSuffixes = policy.sources.atsTargets
+        .filter((t) => t.enabled)
+        .map((t) => t.hostSuffix);
+      const followCandidates = surfaceDrafts
+        .filter((d) => isFollowCandidate(d.url))
+        .slice(0, maxFollow);
+
+      for (const candidate of followCandidates) {
+        try {
+          const atsLinks = await atsResolver.resolveAtsApplyLinks(
+            candidate.url,
+            allowedSuffixes,
+          );
+          for (const atsUrl of atsLinks.slice(0, 5)) {
+            drafts.push({
+              title: candidate.title,
+              company: candidate.company,
+              url: atsUrl,
+              source: "oxylabs-follow-resolve",
+              queryMatched: formatPlannedLine(
+                `follow:${candidate.url}`,
+                "n/a",
+                "en",
+                "follow",
+              ),
+              description: candidate.description,
+            });
+          }
+        } catch {
+          // Follow failures should not fail the whole digest.
+        }
       }
 
       const opportunities = drafts
@@ -88,7 +155,7 @@ export class RunDigest {
       const upserted = await jobs.upsertJobs(merged);
       const digestStatus = derivePostRunStatus(upserted.length);
       const queriesRun = plan.searches.map((s) =>
-        formatPlannedLine(s.query, s.geoLocation, s.lang),
+        formatPlannedLine(s.query, s.geoLocation, s.lang, s.lane),
       );
 
       const digest: Digest = {

@@ -25,7 +25,7 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
     }),
   );
 
-  app.get("/health", (c) => c.json({ ok: true, phase: "P1.1" }));
+  app.get("/health", (c) => c.json({ ok: true, phase: "P1.2" }));
 
   app.get("/status", (c) => c.json(runtime.getMenuBarStatus.execute()));
 
@@ -62,7 +62,8 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
       return c.json({ job });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 404);
+      const status = message.includes("not found") ? 404 : 400;
+      return c.json({ error: message }, status);
     }
   });
 

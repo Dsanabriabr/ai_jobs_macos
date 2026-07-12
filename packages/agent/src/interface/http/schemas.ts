@@ -72,25 +72,48 @@ const candidateProfileSchema = z.object({
     .transform((value) => value ?? null),
 });
 
-export const searchPolicySchema = z.object({
-  mode: z.enum(["persona_graph", "manual_queries"]),
-  queries: z.array(z.string().min(1)).default([]),
-  cadence: cadenceSchema,
-  resultLimitPerQuery: z.number().int().min(1).max(50),
-  geoLocation: z.string().min(2).max(64).optional(),
-  profile: candidateProfileSchema,
-  termGraph: z.object({
-    nodes: z.array(termNodeSchema).min(1),
-  }),
-  maxPlannedQueries: z.number().int().min(1).max(20),
-}).superRefine((policy, ctx) => {
-  if (policy.mode === "manual_queries" && policy.queries.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "queries required when mode is manual_queries",
-      path: ["queries"],
-    });
-  }
+const atsTargetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  hostSuffix: z.string().min(2),
+  enabled: z.boolean(),
+  weight: z.number().min(0).max(1),
 });
+
+const sourcePolicySchema = z.object({
+  surfaceEnabled: z.boolean(),
+  atsTargets: z.array(atsTargetSchema).min(1),
+  budget: z.object({
+    surface: z.number().min(0).max(1),
+    ats: z.number().min(0).max(1),
+    follow: z.number().min(0).max(1),
+  }),
+  maxPagesPerQuery: z.number().int().min(1).max(5),
+  maxFollowResolves: z.number().int().min(0).max(20),
+});
+
+export const searchPolicySchema = z
+  .object({
+    mode: z.enum(["persona_graph", "manual_queries"]),
+    queries: z.array(z.string().min(1)).default([]),
+    cadence: cadenceSchema,
+    resultLimitPerQuery: z.number().int().min(1).max(50),
+    geoLocation: z.string().min(2).max(64).optional(),
+    profile: candidateProfileSchema,
+    termGraph: z.object({
+      nodes: z.array(termNodeSchema).min(1),
+    }),
+    maxPlannedQueries: z.number().int().min(1).max(20),
+    sources: sourcePolicySchema,
+  })
+  .superRefine((policy, ctx) => {
+    if (policy.mode === "manual_queries" && policy.queries.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "queries required when mode is manual_queries",
+        path: ["queries"],
+      });
+    }
+  });
 
 export type SearchPolicyBody = z.infer<typeof searchPolicySchema>;

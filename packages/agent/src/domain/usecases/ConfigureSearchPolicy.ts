@@ -2,6 +2,7 @@ import {
   DEFAULT_SEARCH_POLICY,
   type SearchPolicy,
 } from "../entities/SearchPolicy.js";
+import { DEFAULT_SOURCE_POLICY, normalizeBudget } from "../entities/SourcePolicy.js";
 import type { PolicyRepository } from "../ports/PolicyRepository.js";
 
 export class ConfigureSearchPolicy {
@@ -27,6 +28,10 @@ export class ConfigureSearchPolicy {
     if (policy.termGraph.nodes.length === 0) {
       throw new Error("termGraph.nodes must not be empty");
     }
+    if (policy.sources.maxPagesPerQuery < 1 || policy.sources.maxPagesPerQuery > 5) {
+      throw new Error("sources.maxPagesPerQuery must be between 1 and 5");
+    }
+    policy.sources.budget = normalizeBudget(policy.sources.budget);
     await this.policies.save(policy);
     return policy;
   }
@@ -38,11 +43,21 @@ export function mergeWithDefaultPolicy(partial: Partial<SearchPolicy> | null | u
     return {
       ...base,
       queries: [...base.queries],
-      profile: { ...base.profile, preferredGeos: [...base.profile.preferredGeos], languages: [...base.profile.languages] },
+      profile: {
+        ...base.profile,
+        preferredGeos: [...base.profile.preferredGeos],
+        languages: [...base.profile.languages],
+      },
       termGraph: { nodes: base.termGraph.nodes.map((n) => ({ ...n })) },
+      sources: {
+        ...DEFAULT_SOURCE_POLICY,
+        atsTargets: DEFAULT_SOURCE_POLICY.atsTargets.map((t) => ({ ...t })),
+        budget: { ...DEFAULT_SOURCE_POLICY.budget },
+      },
     };
   }
 
+  const sourcesPartial = partial.sources;
   return {
     mode: partial.mode ?? base.mode,
     queries: partial.queries?.length ? [...partial.queries] : [...base.queries],
@@ -68,5 +83,17 @@ export function mergeWithDefaultPolicy(partial: Partial<SearchPolicy> | null | u
           : base.termGraph.nodes.map((n) => ({ ...n })),
     },
     maxPlannedQueries: partial.maxPlannedQueries ?? base.maxPlannedQueries,
+    sources: {
+      surfaceEnabled: sourcesPartial?.surfaceEnabled ?? DEFAULT_SOURCE_POLICY.surfaceEnabled,
+      atsTargets:
+        sourcesPartial?.atsTargets?.length
+          ? sourcesPartial.atsTargets.map((t) => ({ ...t }))
+          : DEFAULT_SOURCE_POLICY.atsTargets.map((t) => ({ ...t })),
+      budget: normalizeBudget(sourcesPartial?.budget ?? DEFAULT_SOURCE_POLICY.budget),
+      maxPagesPerQuery:
+        sourcesPartial?.maxPagesPerQuery ?? DEFAULT_SOURCE_POLICY.maxPagesPerQuery,
+      maxFollowResolves:
+        sourcesPartial?.maxFollowResolves ?? DEFAULT_SOURCE_POLICY.maxFollowResolves,
+    },
   };
 }

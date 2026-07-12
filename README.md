@@ -29,7 +29,7 @@ cp .env.example .env
 
 ## Quick start
 
-Branch for this work: `feature/p1-signal-quality` (P1.1 signal quality — merge after you validate).
+Branch for this work: `feature/p1-dual-discovery` (P1.2 — merge after you validate).
 
 ### 1. Agent
 

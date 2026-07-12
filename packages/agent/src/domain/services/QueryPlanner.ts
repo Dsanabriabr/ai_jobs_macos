@@ -1,6 +1,7 @@
 import type { CandidateProfile } from "../entities/CandidateProfile.js";
 import type { PlannedSearch, SearchPlan } from "../entities/PlannedSearch.js";
 import type { SearchPolicy } from "../entities/SearchPolicy.js";
+import { allocateSlots } from "../entities/SourcePolicy.js";
 import type { TermGraph, TermNode } from "../entities/TermGraph.js";
 
 function byWeightDesc(a: TermNode, b: TermNode): number {
@@ -30,7 +31,7 @@ function uniqueSearches(items: PlannedSearch[]): PlannedSearch[] {
   const seen = new Set<string>();
   const out: PlannedSearch[] = [];
   for (const item of items) {
-    const key = `${item.geoLocation}::${item.query.toLowerCase()}`;
+    const key = `${item.lane}::${item.geoLocation}::${item.query.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(item);
@@ -38,33 +39,123 @@ function uniqueSearches(items: PlannedSearch[]): PlannedSearch[] {
   return out;
 }
 
+function rotateGeo(geos: string[], index: number): string {
+  return geos[index % geos.length] ?? "Brazil";
+}
+
 export class QueryPlanner {
   plan(policy: SearchPolicy): SearchPlan {
     if (policy.mode === "manual_queries") {
       const geo = policy.geoLocation ?? policy.profile.preferredGeos[0] ?? "Brazil";
+      const searches = policy.queries.map((query) => ({
+        query,
+        geoLocation: geo,
+        lang: "en" as const,
+        rationale: "manual_queries override",
+        lane: "manual" as const,
+      }));
       return {
         mode: "manual_queries",
-        searches: policy.queries.map((query) => ({
-          query,
-          geoLocation: geo,
-          lang: "en",
-          rationale: "manual_queries override",
-        })),
+        searches,
+        slots: { surface: searches.length, ats: 0, follow: 0 },
       };
     }
 
+    const slots = allocateSlots(policy.maxPlannedQueries, policy.sources.budget);
+    // If ATS targets all disabled, fold ATS budget into surface.
+    const enabledAts = policy.sources.atsTargets.some((t) => t.enabled);
+    if (!enabledAts && slots.ats > 0) {
+      slots.surface += slots.ats;
+      slots.ats = 0;
+    }
+    if (!policy.sources.surfaceEnabled && slots.surface > 0 && enabledAts) {
+      slots.ats += slots.surface;
+      slots.surface = 0;
+    }
+    const searches = this.planFromPersona(policy, slots);
     return {
       mode: "persona_graph",
-      searches: this.planFromPersona(policy.profile, policy.termGraph, policy.maxPlannedQueries),
+      searches,
+      slots,
     };
   }
 
   private planFromPersona(
+    policy: SearchPolicy,
+    slots: { surface: number; ats: number; follow: number },
+  ): PlannedSearch[] {
+    const { profile, termGraph: graph, sources } = policy;
+    const geos =
+      profile.preferredGeos.length > 0
+        ? profile.preferredGeos
+        : ["Brazil", "United States"];
+
+    const surfacePool = sources.surfaceEnabled
+      ? this.buildSurfaceTemplates(profile, graph)
+      : [];
+    const atsPool = this.buildAtsTemplates(profile, graph, sources.atsTargets);
+
+    const out: PlannedSearch[] = [];
+    let geoIndex = 0;
+
+    for (let i = 0; i < slots.surface && i < surfacePool.length; i++) {
+      const template = surfacePool[i % surfacePool.length]!;
+      out.push({
+        ...template,
+        geoLocation: rotateGeo(geos, geoIndex++),
+        lane: "surface",
+      });
+    }
+
+    // If surface pool shorter than slots, wrap.
+    while (out.filter((s) => s.lane === "surface").length < slots.surface && surfacePool.length > 0) {
+      const i = out.filter((s) => s.lane === "surface").length;
+      const template = surfacePool[i % surfacePool.length]!;
+      out.push({
+        ...template,
+        geoLocation: rotateGeo(geos, geoIndex++),
+        lane: "surface",
+        rationale: `${template.rationale} · wrap`,
+      });
+    }
+
+    const enabledAts = sources.atsTargets
+      .filter((t) => t.enabled)
+      .sort((a, b) => b.weight - a.weight);
+
+    for (let i = 0; i < slots.ats; i++) {
+      if (atsPool.length === 0) break;
+      // Weight-biased pick: walk enabled ATS in weight order cyclically.
+      const template = atsPool[i % atsPool.length]!;
+      out.push({
+        ...template,
+        geoLocation: rotateGeo(geos, geoIndex++),
+        lane: "ats",
+      });
+    }
+
+    // Follow slots are not google_search queries — recorded for RunDigest resolve budget.
+    for (let i = 0; i < slots.follow; i++) {
+      out.push({
+        query: "__follow_resolve__",
+        geoLocation: rotateGeo(geos, geoIndex++),
+        lang: "en",
+        rationale: `Follow/resolve slot ${i + 1} (surface → ATS extract)`,
+        lane: "follow",
+      });
+    }
+
+    void enabledAts;
+    return uniqueSearches(out.filter((s) => s.lane !== "follow" || s.query === "__follow_resolve__"));
+  }
+
+  private buildSurfaceTemplates(
     profile: CandidateProfile,
     graph: TermGraph,
-    maxQueries: number,
-  ): PlannedSearch[] {
-    const skillsEn = pick(graph, "skill", "en").concat(pick(graph, "skill").filter((n) => n.lang === "any"));
+  ): Array<Omit<PlannedSearch, "geoLocation" | "lane">> {
+    const skillsEn = pick(graph, "skill", "en").concat(
+      pick(graph, "skill").filter((n) => n.lang === "any"),
+    );
     const seniority = pick(graph, "seniority", "en");
     const workEn = pick(graph, "work_model", "en");
     const boostEn = pick(graph, "constraint_boost", "en");
@@ -72,45 +163,34 @@ export class QueryPlanner {
     const boostPt = pick(graph, "constraint_boost", "pt");
     const workPt = pick(graph, "work_model", "pt");
 
-    const geos =
-      profile.preferredGeos.length > 0
-        ? profile.preferredGeos
-        : ["Brazil", "United States"];
-
-    const templates: Array<Omit<PlannedSearch, "geoLocation">> = [];
+    const templates: Array<Omit<PlannedSearch, "geoLocation" | "lane">> = [];
 
     if (profile.languages.includes("en")) {
-      const core = [joinLabels(skillsEn, 2), joinLabels(seniority, 1)]
-        .filter(Boolean)
-        .join(" ");
-      const withRemote = [core, joinLabels(boostEn, 2), joinLabels(workEn, 1)]
-        .filter(Boolean)
-        .join(" ");
+      const core = [joinLabels(skillsEn, 2), joinLabels(seniority, 1)].filter(Boolean).join(" ");
       templates.push({
-        query: withRemote || "ios senior remote",
+        query: [core, joinLabels(boostEn, 2), joinLabels(workEn, 1)].filter(Boolean).join(" "),
         lang: "en",
-        rationale: "EN core skills + remote/contractor boosts",
+        rationale: "Surface EN — skills + remote/contractor (no site:)",
       });
       templates.push({
         query: [joinLabels(skillsEn, 1), "senior", "worldwide remote"].filter(Boolean).join(" "),
         lang: "en",
-        rationale: "EN worldwide remote bias (no visa assumption)",
+        rationale: "Surface EN — worldwide remote",
       });
     }
 
     if (profile.languages.includes("pt-BR")) {
-      const ptCore = joinLabels(localePt, 2) || "vaga ios senior";
       templates.push({
-        query: [ptCore, joinLabels(boostPt, 1), joinLabels(workPt, 1)]
+        query: [joinLabels(localePt, 2) || "vaga ios senior", joinLabels(boostPt, 1), joinLabels(workPt, 1)]
           .filter(Boolean)
           .join(" "),
         lang: "pt",
-        rationale: "PT channel for BR market / Portuguese listings",
+        rationale: "Surface PT — open web (no site:)",
       });
       templates.push({
-        query: ["desenvolvedor ios senior", "remoto", "PJ"].join(" "),
+        query: "desenvolvedor ios senior remoto PJ",
         lang: "pt",
-        rationale: "PT PJ + remoto explicit",
+        rationale: "Surface PT — PJ remoto",
       });
     }
 
@@ -120,45 +200,42 @@ export class QueryPlanner {
           .filter(Boolean)
           .join(" "),
         lang: "en",
-        rationale: "Explicit no-relocation / contractor for no-US-visa profile",
+        rationale: "Surface EN — no relocation",
       });
     }
 
-    // Prefer direct ATS indexes over aggregator SERPs.
+    return templates;
+  }
+
+  private buildAtsTemplates(
+    profile: CandidateProfile,
+    graph: TermGraph,
+    atsTargets: SearchPolicy["sources"]["atsTargets"],
+  ): Array<Omit<PlannedSearch, "geoLocation" | "lane">> {
+    const enabled = atsTargets.filter((t) => t.enabled).sort((a, b) => b.weight - a.weight);
+    if (enabled.length === 0) return [];
+
+    const skillsEn = pick(graph, "skill", "en").concat(
+      pick(graph, "skill").filter((n) => n.lang === "any"),
+    );
     const skill = joinLabels(skillsEn, 1) || "ios";
-    templates.unshift({
-      query: `${skill} senior remote site:gupy.io OR site:greenhouse.io OR site:lever.co OR site:ashbyhq.com`,
-      lang: "en",
-      rationale: "ATS-first site operators to reduce aggregator noise",
-    });
-    if (profile.languages.includes("pt-BR")) {
-      templates.unshift({
-        query: `vaga ios senior remoto site:gupy.io`,
-        lang: "pt",
-        rationale: "PT ATS-first on Gupy",
+    const templates: Array<Omit<PlannedSearch, "geoLocation" | "lane">> = [];
+
+    for (const target of enabled) {
+      templates.push({
+        query: `${skill} senior remote site:${target.hostSuffix}`,
+        lang: "en",
+        rationale: `ATS lane — ${target.label} (site:${target.hostSuffix})`,
       });
-    }
-
-    const expanded: PlannedSearch[] = [];
-    let geoIndex = 0;
-    for (const template of templates) {
-      const geo = geos[geoIndex % geos.length]!;
-      geoIndex += 1;
-      expanded.push({ ...template, geoLocation: geo });
-    }
-
-    // Ensure each preferred geo appears at least once with the strongest EN template.
-    const primaryEn = templates.find((t) => t.lang === "en");
-    if (primaryEn) {
-      for (const geo of geos) {
-        expanded.push({
-          ...primaryEn,
-          geoLocation: geo,
-          rationale: `${primaryEn.rationale} · geo=${geo}`,
+      if (profile.languages.includes("pt-BR") && target.hostSuffix.includes("gupy")) {
+        templates.push({
+          query: `vaga ios senior remoto site:${target.hostSuffix}`,
+          lang: "pt",
+          rationale: `ATS lane PT — ${target.label}`,
         });
       }
     }
 
-    return uniqueSearches(expanded).slice(0, Math.max(1, maxQueries));
+    return templates;
   }
 }

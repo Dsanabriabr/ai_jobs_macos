@@ -6,8 +6,15 @@ struct DigestPopoverView: View {
     @State private var mode = "persona_graph"
     @State private var queriesText = ""
     @State private var geosText = "Brazil, United States, Germany"
-    @State private var maxPlanned = 6
+    @State private var maxPlanned = 8
+    @State private var resultLimit = 10
+    @State private var maxPages = 2
+    @State private var maxFollow = 3
+    @State private var surfaceEnabled = true
+    @State private var surfaceBudget = 0.45
+    @State private var atsBudget = 0.45
     @State private var cadenceKind = "manual"
+    @State private var atsTargets: [AtsTargetDTO] = []
     @State private var showPolicy = false
 
     var body: some View {
@@ -32,7 +39,7 @@ struct DigestPopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 460, height: 680)
+        .frame(width: 480, height: 720)
         .task {
             await session.refresh()
             syncPolicyFields()
@@ -48,7 +55,7 @@ struct DigestPopoverView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Jobs · P1.1")
+                Text("AI Jobs · P1.2")
                     .font(.headline)
                 Text(session.agentReachable ? "Agent online" : "Agent offline — start packages/agent")
                     .font(.caption)
@@ -113,7 +120,7 @@ struct DigestPopoverView: View {
                             .foregroundStyle(.secondary)
                     }
                     if let mirrors = job.mirrors, mirrors.count > 1 {
-                        Text("\(mirrors.count) sources · canonical preferred")
+                        Text("\(mirrors.count) sources · cross-host")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -133,66 +140,79 @@ struct DigestPopoverView: View {
                             Task { await session.label(jobId: job.id, as: "noise") }
                         }
                         .tint(.orange)
-                        Button("Dup") {
-                            Task { await session.label(jobId: job.id, as: "duplicate") }
+                        if canMarkDuplicate(job) {
+                            Button("Dup") {
+                                Task { await session.label(jobId: job.id, as: "duplicate") }
+                            }
+                            .tint(.secondary)
                         }
-                        .tint(.secondary)
                     }
                     .font(.caption)
                 }
                 .padding(.vertical, 4)
             }
             .listStyle(.plain)
-            .frame(minHeight: 200)
+            .frame(minHeight: 180)
         } else {
             ContentUnavailableView(
                 "No jobs in this filter",
                 systemImage: "briefcase",
-                description: Text("Run now, then label Signal/Noise to train the journal.")
+                description: Text("Run dual discovery (surface + ATS). Label Signal/Noise.")
             )
             .frame(minHeight: 120)
         }
     }
 
     private var policyEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Mode", selection: $mode) {
-                Text("Persona graph").tag("persona_graph")
-                Text("Manual queries").tag("manual_queries")
-            }
-            .pickerStyle(.segmented)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Mode", selection: $mode) {
+                    Text("Persona graph").tag("persona_graph")
+                    Text("Manual queries").tag("manual_queries")
+                }
+                .pickerStyle(.segmented)
 
-            Picker("Cadence", selection: $cadenceKind) {
-                Text("Manual").tag("manual")
-                Text("Daily").tag("daily")
-                Text("Weekly").tag("weekly")
-                Text("Monthly").tag("monthly")
-            }
-            .pickerStyle(.menu)
+                Picker("Cadence", selection: $cadenceKind) {
+                    Text("Manual").tag("manual")
+                    Text("Daily").tag("daily")
+                    Text("Weekly").tag("weekly")
+                    Text("Monthly").tag("monthly")
+                }
+                .pickerStyle(.menu)
 
-            if mode == "manual_queries" {
-                Text("Queries (comma-separated)")
+                Toggle("Surface search enabled", isOn: $surfaceEnabled)
+
+                Text("Budget — surface \(Int(surfaceBudget * 100))% / ATS \(Int(atsBudget * 100))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField("ios senior remote, vaga ios remoto", text: $queriesText, axis: .vertical)
-                    .lineLimit(2...3)
-            } else {
-                Text("Preferred geos (comma-separated)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("Brazil, United States, Germany", text: $geosText)
-                Stepper("Max planned queries: \(maxPlanned)", value: $maxPlanned, in: 1...12)
-                if let profile = session.policy?.profile {
-                    Text("\(profile.displayName) · \(profile.workModel) · \(profile.visaConstraint)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Slider(value: $surfaceBudget, in: 0...0.9, step: 0.05)
+                Slider(value: $atsBudget, in: 0...0.9, step: 0.05)
+
+                Stepper("Max planned queries: \(maxPlanned)", value: $maxPlanned, in: 2...16)
+                Stepper("Results per query: \(resultLimit)", value: $resultLimit, in: 5...20)
+                Stepper("SERP pages per query: \(maxPages)", value: $maxPages, in: 1...5)
+                Stepper("Follow/resolve max: \(maxFollow)", value: $maxFollow, in: 0...10)
+
+                Text("ATS targets")
+                    .font(.caption.weight(.semibold))
+                ForEach($atsTargets) { $target in
+                    Toggle(target.label, isOn: $target.enabled)
+                        .font(.caption)
+                }
+
+                if mode == "manual_queries" {
+                    TextField("Queries (comma-separated)", text: $queriesText, axis: .vertical)
+                        .lineLimit(2...3)
+                } else {
+                    TextField("Preferred geos", text: $geosText)
+                }
+
+                Button("Save policy") {
+                    Task { await savePolicy() }
                 }
             }
-
-            Button("Save policy") {
-                Task { await savePolicy() }
-            }
         }
+        .frame(maxHeight: 260)
     }
 
     @ViewBuilder
@@ -200,9 +220,14 @@ struct DigestPopoverView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Planned searches")
                 .font(.caption.weight(.semibold))
+            if let slots = session.plan?.slots {
+                Text("slots surface=\(slots.surface) ats=\(slots.ats) follow=\(slots.follow)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             if let searches = session.plan?.searches, !searches.isEmpty {
-                ForEach(searches.prefix(5)) { item in
-                    Text("• [\(item.geoLocation)/\(item.lang)] \(item.query)")
+                ForEach(searches.prefix(6)) { item in
+                    Text("• [\(item.lane ?? "?")/\(item.geoLocation)] \(item.query)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -235,20 +260,43 @@ struct DigestPopoverView: View {
         }
     }
 
+    private func canMarkDuplicate(_ job: JobOpportunityDTO) -> Bool {
+        let hosts = Set((job.mirrors ?? []).map(\.host))
+        return hosts.count >= 2
+    }
+
     private func syncPolicyFields() {
         guard let policy = session.policy else { return }
         mode = policy.mode
         queriesText = policy.queries.joined(separator: ", ")
         geosText = policy.profile.preferredGeos.joined(separator: ", ")
         maxPlanned = policy.maxPlannedQueries
+        resultLimit = policy.resultLimitPerQuery
         cadenceKind = policy.cadence.kind
+        surfaceEnabled = policy.sources.surfaceEnabled
+        surfaceBudget = policy.sources.budget.surface
+        atsBudget = policy.sources.budget.ats
+        maxPages = policy.sources.maxPagesPerQuery
+        maxFollow = policy.sources.maxFollowResolves
+        atsTargets = policy.sources.atsTargets
     }
 
     private func savePolicy() async {
         guard var policy = session.policy else { return }
+        let followBudget = max(0, 1 - surfaceBudget - atsBudget)
         policy.mode = mode
         policy.maxPlannedQueries = maxPlanned
+        policy.resultLimitPerQuery = resultLimit
         policy.cadence = makeCadence(kind: cadenceKind, previous: policy.cadence)
+        policy.sources.surfaceEnabled = surfaceEnabled
+        policy.sources.budget = DiscoveryBudgetDTO(
+            surface: surfaceBudget,
+            ats: atsBudget,
+            follow: followBudget
+        )
+        policy.sources.maxPagesPerQuery = maxPages
+        policy.sources.maxFollowResolves = maxFollow
+        policy.sources.atsTargets = atsTargets
         policy.profile.preferredGeos = geosText
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

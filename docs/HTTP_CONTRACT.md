@@ -1,33 +1,43 @@
-# Agent HTTP contract (P1.1 on `feature/p1-signal-quality`)
+# Agent HTTP contract (P1.2 on `feature/p1-dual-discovery`)
 
 Base URL default: `http://127.0.0.1:8787`
-
-Discovery: Oxylabs Web Scraper `google_search` + signal pipeline (denylist, ATS prefer, fingerprint merge, labels).
 
 ## `GET /health`
 
 ```json
-{ "ok": true, "phase": "P1.1" }
+{ "ok": true, "phase": "P1.2" }
 ```
+
+## Policy `sources` (P1.2)
+
+```json
+{
+  "sources": {
+    "surfaceEnabled": true,
+    "atsTargets": [
+      { "id": "gupy", "label": "Gupy", "hostSuffix": "gupy.io", "enabled": true, "weight": 0.9 }
+    ],
+    "budget": { "surface": 0.45, "ats": 0.45, "follow": 0.1 },
+    "maxPagesPerQuery": 2,
+    "maxFollowResolves": 3
+  },
+  "resultLimitPerQuery": 10,
+  "maxPlannedQueries": 8
+}
+```
+
+## `GET /policy/plan`
+
+Returns `searches[]` with `lane`: `surface` | `ats` | `follow` | `manual`, plus `slots`.
 
 ## `GET /digest/latest?filter=hide_noise`
 
-Filters: `all` | `hide_noise` | `signal` | `unlabeled` | `ats_only`
-
-Jobs include `hostKind`, `label`, `fingerprint`, `mirrors`.
+Filters + jobs with `mirrors` / `hostKind` / `label`.
 
 ## `POST /jobs/:id/label`
 
-```json
-{ "label": "signal" }
-```
+`signal` | `noise` | `duplicate` — `duplicate` requires 2+ distinct mirror hosts (400 otherwise).
 
-Values: `signal` | `noise` | `duplicate` → appends `feedback.jsonl`.
+## `POST /runs`
 
-## `GET /feedback`
-
-Recent label events (Create ML corpus later).
-
-## `GET /policy` / `PUT /policy` / `GET /policy/plan` / `POST /runs`
-
-Same as P1; cadence is editable from the menu bar (manual/daily/weekly/monthly).
+Runs surface + ATS google_search (with `pages`) and optional follow/resolve scrapes.

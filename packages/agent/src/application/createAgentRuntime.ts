@@ -40,11 +40,19 @@ export function createAgentRuntime(config: AgentConfig): AgentRuntime {
   const policies = new FilePolicyRepository(path.join(config.dataDir, "policy.json"));
   const journal = new FileFeedbackJournal(path.join(config.dataDir, "feedback.jsonl"));
   const status = new InMemoryStatusGateway();
-  const jobSearch = new OxylabsWebScraperSearchAdapter(config.oxylabs);
+  const oxylabs = new OxylabsWebScraperSearchAdapter(config.oxylabs);
   const planner = new QueryPlanner();
 
   return {
-    runDigest: new RunDigest({ jobSearch, jobs, policies, status, journal, planner }),
+    runDigest: new RunDigest({
+      jobSearch: oxylabs,
+      atsResolver: oxylabs,
+      jobs,
+      policies,
+      status,
+      journal,
+      planner,
+    }),
     getLatestDigest: new GetLatestDigest(jobs),
     getMenuBarStatus: new GetMenuBarStatus(status),
     configureSearchPolicy: new ConfigureSearchPolicy(policies),

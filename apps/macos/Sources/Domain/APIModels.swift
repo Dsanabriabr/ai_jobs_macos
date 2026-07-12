@@ -23,11 +23,12 @@ struct JobOpportunityDTO: Codable, Identifiable, Equatable {
 }
 
 struct PlannedSearchDTO: Codable, Equatable, Identifiable {
-    var id: String { "\(geoLocation)|\(lang)|\(query)" }
+    var id: String { "\(lane ?? "x")|\(geoLocation)|\(lang)|\(query)" }
     let query: String
     let geoLocation: String
     let lang: String
     let rationale: String
+    let lane: String?
 }
 
 struct DigestDTO: Codable, Equatable {
@@ -130,6 +131,29 @@ struct SearchPolicyDTO: Codable, Equatable {
     var profile: CandidateProfileDTO
     var termGraph: TermGraphDTO
     var maxPlannedQueries: Int
+    var sources: SourcePolicyDTO
+}
+
+struct AtsTargetDTO: Codable, Equatable, Identifiable {
+    var id: String
+    var label: String
+    var hostSuffix: String
+    var enabled: Bool
+    var weight: Double
+}
+
+struct DiscoveryBudgetDTO: Codable, Equatable {
+    var surface: Double
+    var ats: Double
+    var follow: Double
+}
+
+struct SourcePolicyDTO: Codable, Equatable {
+    var surfaceEnabled: Bool
+    var atsTargets: [AtsTargetDTO]
+    var budget: DiscoveryBudgetDTO
+    var maxPagesPerQuery: Int
+    var maxFollowResolves: Int
 }
 
 struct TermGraphDTO: Codable, Equatable {
@@ -140,9 +164,16 @@ struct PolicyResponse: Codable, Equatable {
     let policy: SearchPolicyDTO
 }
 
+struct PlanSlotsDTO: Codable, Equatable {
+    let surface: Int
+    let ats: Int
+    let follow: Int
+}
+
 struct SearchPlanDTO: Codable, Equatable {
     let mode: String
     let searches: [PlannedSearchDTO]
+    let slots: PlanSlotsDTO?
 }
 
 struct PlanResponse: Codable, Equatable {
