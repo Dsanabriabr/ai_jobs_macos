@@ -4,7 +4,6 @@ import type {
   JobSearchPort,
   JobSearchQuery,
 } from "../../domain/ports/JobSearchPort.js";
-import { classifyHost, isDeniedHost } from "../../domain/services/HostPolicy.js";
 
 const REALTIME_URL = "https://realtime.oxylabs.io/v1/queries";
 
@@ -27,28 +26,6 @@ function guessCompany(title: string, description: string | null): string | null 
   }
   const fromDesc = description?.match(/\bat\s+([A-Z][\w.& ]{1,60})/);
   return fromDesc?.[1]?.trim() ?? null;
-}
-
-function looksLikeJobPosting(title: string, url: string, description: string | null): boolean {
-  if (isDeniedHost(url)) return false;
-  const kind = classifyHost(url);
-  if (kind === "ats") return true;
-
-  const haystack = `${title} ${description ?? ""} ${url}`.toLowerCase();
-  const path = (() => {
-    try {
-      return new URL(url).pathname.toLowerCase();
-    } catch {
-      return "";
-    }
-  })();
-
-  const pathSignals = ["/job", "/jobs/", "/vaga", "/careers/", "/position", "/opening", "/aplicar"];
-  const hasPath = pathSignals.some((s) => path.includes(s));
-  const titleSignals = ["ios", "swift", "mobile", "senior", "engineer", "developer", "desenvolvedor"];
-  const hasTitle = titleSignals.some((s) => haystack.includes(s));
-
-  return hasPath && hasTitle;
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -193,8 +170,7 @@ export class OxylabsWebScraperSearchAdapter implements JobSearchPort, AtsLinkRes
           queryMatched: input.query,
           description,
         } satisfies JobListingDraft;
-      })
-      .filter((row) => looksLikeJobPosting(row.title, row.url, row.description));
+      });
   }
 
   async resolveAtsApplyLinks(url: string, allowedHostSuffixes: string[]): Promise<string[]> {

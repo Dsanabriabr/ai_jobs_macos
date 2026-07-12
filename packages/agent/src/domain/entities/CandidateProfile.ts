@@ -22,8 +22,8 @@ export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
   languages: ["pt-BR", "en"],
   workModel: "pj_contractor",
   visaConstraint: "no_us_visa",
-  preferredGeos: ["Brazil", "United States", "Germany"],
+  preferredGeos: ["Brazil", "United States"],
   timezone: "America/Sao_Paulo",
   notes:
-    "Brazilian company; advanced English; remote/contractor for international clients; no US visa.",
+    "Brazilian company; advanced English; remote BR/worldwide contractor (PJ); no US visa. Surface-first discovery.",
 };

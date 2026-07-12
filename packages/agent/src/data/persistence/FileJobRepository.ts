@@ -145,6 +145,7 @@ export class FileJobRepository implements JobRepository {
       plannedSearches: digest.plannedSearches ?? [],
       queriesRun: digest.queriesRun ?? [],
       jobs: (digest.jobs ?? []).map((j) => normalizeJob(j)),
+      diagnostics: digest.diagnostics ?? null,
     };
   }
 }

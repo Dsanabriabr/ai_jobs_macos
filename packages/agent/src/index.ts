@@ -42,5 +42,5 @@ serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`ai-jobs agent listening on http://${host}:${info.port}`);
   console.log(`data dir: ${dataDir}`);
   console.log(`oxylabs user: ${process.env.OXYLABS_USERNAME}`);
-  console.log(`phase: P1.2 (dual discovery + configurable sources)`);
+  console.log(`phase: P1.3 (surface-first + soft demote + coupled budget)`);
 });

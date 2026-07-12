@@ -28,15 +28,15 @@
 - Dup only cross-source
 - **Known issues:** empty list from hard denylist + strict heuristic; budget sliders not coupled to 100%; ATS still too central vs BR+remote goal → **P1.3**
 
-## P1.3 — Surface-first recovery (next)
+## P1.3 — Surface-first recovery (`feature/p1-surface-first`) — current
 
 See [docs/P1_3_SURFACE_FIRST.md](P1_3_SURFACE_FIRST.md).
 
-- Soft demote boards (don’t drop LinkedIn/Vagas/Indeed wholesale)
-- Relax posting heuristic; surface-first defaults (≈70/20/10)
-- Budget UI/domain invariant: surface+ATS+follow = 100%
-- Run diagnostics (raw/dropped/kept) so empty list is explainable
-- ATS optional enrichment, not primary index
+- Soft demote boards (LinkedIn/Vagas/Indeed kept, ranked lower)
+- Relaxed posting heuristic; surface-first defaults (70/20/10)
+- Coupled budget invariant (surface+ATS+follow = 100%)
+- Run diagnostics on digest
+- ATS search lane off by default; follow/resolve still enriches
 
 ## P2 — Intelligence v1 (Cursor)
 

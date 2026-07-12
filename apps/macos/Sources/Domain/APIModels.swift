@@ -40,6 +40,17 @@ struct DigestDTO: Codable, Equatable {
     let errorMessage: String?
     let queriesRun: [String]
     let plannedSearches: [PlannedSearchDTO]?
+    let diagnostics: RunDiagnosticsDTO?
+}
+
+struct RunDiagnosticsDTO: Codable, Equatable {
+    let rawHits: Int
+    let droppedDenied: Int
+    let droppedHeuristic: Int
+    let keptBeforeMerge: Int
+    let kept: Int
+    let followed: Int
+    let followLinksFound: Int
 }
 
 struct StatusResponse: Codable, Equatable {

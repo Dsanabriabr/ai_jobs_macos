@@ -2,7 +2,7 @@ import {
   DEFAULT_SEARCH_POLICY,
   type SearchPolicy,
 } from "../entities/SearchPolicy.js";
-import { DEFAULT_SOURCE_POLICY, normalizeBudget } from "../entities/SourcePolicy.js";
+import { DEFAULT_SOURCE_POLICY, normalizeBudget, setSurfaceShare } from "../entities/SourcePolicy.js";
 import type { PolicyRepository } from "../ports/PolicyRepository.js";
 
 export class ConfigureSearchPolicy {
@@ -32,6 +32,11 @@ export class ConfigureSearchPolicy {
       throw new Error("sources.maxPagesPerQuery must be between 1 and 5");
     }
     policy.sources.budget = normalizeBudget(policy.sources.budget);
+    // Enforce coupled invariant via surface+follow → ats remainder.
+    policy.sources.budget = setSurfaceShare(
+      policy.sources.budget.surface,
+      policy.sources.budget.follow,
+    );
     await this.policies.save(policy);
     return policy;
   }
@@ -89,7 +94,10 @@ export function mergeWithDefaultPolicy(partial: Partial<SearchPolicy> | null | u
         sourcesPartial?.atsTargets?.length
           ? sourcesPartial.atsTargets.map((t) => ({ ...t }))
           : DEFAULT_SOURCE_POLICY.atsTargets.map((t) => ({ ...t })),
-      budget: normalizeBudget(sourcesPartial?.budget ?? DEFAULT_SOURCE_POLICY.budget),
+      budget: setSurfaceShare(
+        sourcesPartial?.budget?.surface ?? DEFAULT_SOURCE_POLICY.budget.surface,
+        sourcesPartial?.budget?.follow ?? DEFAULT_SOURCE_POLICY.budget.follow,
+      ),
       maxPagesPerQuery:
         sourcesPartial?.maxPagesPerQuery ?? DEFAULT_SOURCE_POLICY.maxPagesPerQuery,
       maxFollowResolves:

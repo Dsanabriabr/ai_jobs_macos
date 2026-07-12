@@ -29,7 +29,9 @@ cp .env.example .env
 
 ## Quick start
 
-Branch for this work: `feature/p1-dual-discovery` (P1.2 — merge after you validate).
+Branch for this work: `feature/p1-surface-first` (P1.3 — merge after you validate).
+
+**Tip:** delete `packages/agent/.data/policy.json` once so surface-first defaults load (ATS lane off, 70/20/10 budget).
 
 ### 1. Agent
 

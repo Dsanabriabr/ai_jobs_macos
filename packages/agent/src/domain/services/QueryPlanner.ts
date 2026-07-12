@@ -165,42 +165,50 @@ export class QueryPlanner {
 
     const templates: Array<Omit<PlannedSearch, "geoLocation" | "lane">> = [];
 
-    if (profile.languages.includes("en")) {
-      const core = [joinLabels(skillsEn, 2), joinLabels(seniority, 1)].filter(Boolean).join(" ");
-      templates.push({
-        query: [core, joinLabels(boostEn, 2), joinLabels(workEn, 1)].filter(Boolean).join(" "),
-        lang: "en",
-        rationale: "Surface EN — skills + remote/contractor (no site:)",
-      });
-      templates.push({
-        query: [joinLabels(skillsEn, 1), "senior", "worldwide remote"].filter(Boolean).join(" "),
-        lang: "en",
-        rationale: "Surface EN — worldwide remote",
-      });
-    }
-
+    // Brazil + remote first (product intent).
     if (profile.languages.includes("pt-BR")) {
       templates.push({
-        query: [joinLabels(localePt, 2) || "vaga ios senior", joinLabels(boostPt, 1), joinLabels(workPt, 1)]
+        query: [
+          joinLabels(localePt, 2) || "vaga ios senior",
+          "remoto",
+          "Brasil",
+          joinLabels(workPt, 1),
+        ]
           .filter(Boolean)
           .join(" "),
         lang: "pt",
-        rationale: "Surface PT — open web (no site:)",
+        rationale: "Surface PT — Brasil + remoto",
       });
       templates.push({
-        query: "desenvolvedor ios senior remoto PJ",
+        query: "desenvolvedor ios senior remoto PJ Brasil",
         lang: "pt",
-        rationale: "Surface PT — PJ remoto",
+        rationale: "Surface PT — PJ remoto BR",
+      });
+    }
+
+    if (profile.languages.includes("en")) {
+      const core = [joinLabels(skillsEn, 2), joinLabels(seniority, 1)].filter(Boolean).join(" ");
+      templates.push({
+        query: [core, "remote", "Brazil OR LatAm OR worldwide", joinLabels(workEn, 1)]
+          .filter(Boolean)
+          .join(" "),
+        lang: "en",
+        rationale: "Surface EN — remote BR/LatAm/worldwide",
+      });
+      templates.push({
+        query: [joinLabels(skillsEn, 1), "senior", joinLabels(boostEn, 2), "contractor"].filter(Boolean).join(" "),
+        lang: "en",
+        rationale: "Surface EN — remote contractor",
       });
     }
 
     if (profile.visaConstraint === "no_us_visa") {
       templates.push({
-        query: [joinLabels(skillsEn, 2), "senior remote contractor", "no relocation"]
+        query: [joinLabels(skillsEn, 2), "senior remote", "no relocation", "contractor"]
           .filter(Boolean)
           .join(" "),
         lang: "en",
-        rationale: "Surface EN — no relocation",
+        rationale: "Surface EN — no US visa / no relocation",
       });
     }
 

@@ -25,7 +25,7 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
     }),
   );
 
-  app.get("/health", (c) => c.json({ ok: true, phase: "P1.2" }));
+  app.get("/health", (c) => c.json({ ok: true, phase: "P1.3" }));
 
   app.get("/status", (c) => c.json(runtime.getMenuBarStatus.execute()));
 

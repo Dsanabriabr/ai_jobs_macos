@@ -5,17 +5,22 @@ struct DigestPopoverView: View {
     @EnvironmentObject private var session: AppSession
     @State private var mode = "persona_graph"
     @State private var queriesText = ""
-    @State private var geosText = "Brazil, United States, Germany"
+    @State private var geosText = "Brazil, United States"
     @State private var maxPlanned = 8
     @State private var resultLimit = 10
     @State private var maxPages = 2
     @State private var maxFollow = 3
     @State private var surfaceEnabled = true
-    @State private var surfaceBudget = 0.45
-    @State private var atsBudget = 0.45
+    /// Coupled: surfaceShare + followShare + atsShare == 1.0
+    @State private var surfaceShare = 0.70
+    @State private var followShare = 0.10
     @State private var cadenceKind = "manual"
     @State private var atsTargets: [AtsTargetDTO] = []
     @State private var showPolicy = false
+
+    private var atsShare: Double {
+        max(0, 1 - surfaceShare - followShare)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,6 +32,7 @@ struct DigestPopoverView: View {
                     .textSelection(.enabled)
             }
             filterBar
+            diagnosticsBar
             Divider()
             jobList
             Divider()
@@ -39,7 +45,7 @@ struct DigestPopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 480, height: 720)
+        .frame(width: 480, height: 740)
         .task {
             await session.refresh()
             syncPolicyFields()
@@ -55,7 +61,7 @@ struct DigestPopoverView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Jobs · P1.2")
+                Text("AI Jobs · P1.3")
                     .font(.headline)
                 Text(session.agentReachable ? "Agent online" : "Agent offline — start packages/agent")
                     .font(.caption)
@@ -91,6 +97,17 @@ struct DigestPopoverView: View {
         }
         .pickerStyle(.menu)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var diagnosticsBar: some View {
+        if let d = session.digest?.diagnostics {
+            Text(
+                "raw \(d.rawHits) · denied \(d.droppedDenied) · weak \(d.droppedHeuristic) · kept \(d.kept) · follow \(d.followed)/\(d.followLinksFound)"
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
@@ -157,7 +174,7 @@ struct DigestPopoverView: View {
             ContentUnavailableView(
                 "No jobs in this filter",
                 systemImage: "briefcase",
-                description: Text("Run dual discovery (surface + ATS). Label Signal/Noise.")
+                description: Text("Run surface-first discovery. Check diagnostics above if empty.")
             )
             .frame(minHeight: 120)
         }
@@ -182,18 +199,51 @@ struct DigestPopoverView: View {
 
                 Toggle("Surface search enabled", isOn: $surfaceEnabled)
 
-                Text("Budget — surface \(Int(surfaceBudget * 100))% / ATS \(Int(atsBudget * 100))%")
-                    .font(.caption)
+                Text(
+                    "Budget \(Int(surfaceShare * 100))% surface · \(Int(atsShare * 100))% ATS · \(Int(followShare * 100))% follow (=100%)"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Text("Surface share")
+                    .font(.caption2)
+                Slider(
+                    value: Binding(
+                        get: { surfaceShare },
+                        set: { newValue in
+                            let maxSurface = 1 - followShare
+                            surfaceShare = min(maxSurface, max(0, newValue))
+                        }
+                    ),
+                    in: 0...(1 - followShare),
+                    step: 0.05
+                )
+
+                Text("Follow share (max 20%)")
+                    .font(.caption2)
+                Slider(
+                    value: Binding(
+                        get: { followShare },
+                        set: { newValue in
+                            followShare = min(0.2, max(0, newValue))
+                            let maxSurface = 1 - followShare
+                            if surfaceShare > maxSurface { surfaceShare = maxSurface }
+                        }
+                    ),
+                    in: 0...0.2,
+                    step: 0.05
+                )
+
+                Text("ATS share is the remainder (not independently editable).")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                Slider(value: $surfaceBudget, in: 0...0.9, step: 0.05)
-                Slider(value: $atsBudget, in: 0...0.9, step: 0.05)
 
                 Stepper("Max planned queries: \(maxPlanned)", value: $maxPlanned, in: 2...16)
                 Stepper("Results per query: \(resultLimit)", value: $resultLimit, in: 5...20)
                 Stepper("SERP pages per query: \(maxPages)", value: $maxPages, in: 1...5)
                 Stepper("Follow/resolve max: \(maxFollow)", value: $maxFollow, in: 0...10)
 
-                Text("ATS targets")
+                Text("ATS search lane (optional — off by default)")
                     .font(.caption.weight(.semibold))
                 ForEach($atsTargets) { $target in
                     Toggle(target.label, isOn: $target.enabled)
@@ -212,7 +262,7 @@ struct DigestPopoverView: View {
                 }
             }
         }
-        .frame(maxHeight: 260)
+        .frame(maxHeight: 280)
     }
 
     @ViewBuilder
@@ -274,8 +324,8 @@ struct DigestPopoverView: View {
         resultLimit = policy.resultLimitPerQuery
         cadenceKind = policy.cadence.kind
         surfaceEnabled = policy.sources.surfaceEnabled
-        surfaceBudget = policy.sources.budget.surface
-        atsBudget = policy.sources.budget.ats
+        followShare = min(0.2, max(0, policy.sources.budget.follow))
+        surfaceShare = min(1 - followShare, max(0, policy.sources.budget.surface))
         maxPages = policy.sources.maxPagesPerQuery
         maxFollow = policy.sources.maxFollowResolves
         atsTargets = policy.sources.atsTargets
@@ -283,16 +333,16 @@ struct DigestPopoverView: View {
 
     private func savePolicy() async {
         guard var policy = session.policy else { return }
-        let followBudget = max(0, 1 - surfaceBudget - atsBudget)
         policy.mode = mode
         policy.maxPlannedQueries = maxPlanned
         policy.resultLimitPerQuery = resultLimit
         policy.cadence = makeCadence(kind: cadenceKind, previous: policy.cadence)
         policy.sources.surfaceEnabled = surfaceEnabled
+        // Coupled 100%: ATS is remainder.
         policy.sources.budget = DiscoveryBudgetDTO(
-            surface: surfaceBudget,
-            ats: atsBudget,
-            follow: followBudget
+            surface: surfaceShare,
+            ats: atsShare,
+            follow: followShare
         )
         policy.sources.maxPagesPerQuery = maxPages
         policy.sources.maxFollowResolves = maxFollow
@@ -309,7 +359,7 @@ struct DigestPopoverView: View {
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-            policy.queries = queries.isEmpty ? ["ios senior remote contractor"] : queries
+            policy.queries = queries.isEmpty ? ["ios senior remoto brasil"] : queries
         }
         await session.savePolicy(policy)
     }

@@ -25,7 +25,7 @@ export interface SearchPolicy {
 
 export const DEFAULT_SEARCH_POLICY: SearchPolicy = {
   mode: "persona_graph",
-  queries: ["ios senior remote contractor"],
+  queries: ["ios senior remoto brasil", "ios senior remote contractor"],
   cadence: { kind: "manual" },
   resultLimitPerQuery: 10,
   geoLocation: "Brazil",

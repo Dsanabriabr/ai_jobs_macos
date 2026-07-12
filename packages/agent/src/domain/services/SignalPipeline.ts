@@ -6,6 +6,7 @@ import {
   extractHost,
   hostRank,
   isDeniedHost,
+  sortByHostRank,
 } from "./HostPolicy.js";
 
 function jobIdFromFingerprint(fingerprint: string): string {
@@ -20,11 +21,69 @@ function mirrorFromUrl(url: string): JobSourceMirror {
   };
 }
 
+export function looksLikeJobPosting(
+  title: string,
+  url: string,
+  description: string | null,
+): boolean {
+  if (isDeniedHost(url)) return false;
+  const kind = classifyHost(url);
+  if (kind === "ats") return true;
+
+  const haystack = `${title} ${description ?? ""} ${url}`.toLowerCase();
+  const path = (() => {
+    try {
+      return new URL(url).pathname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+
+  const pathSignals = [
+    "/job",
+    "/jobs/",
+    "/vaga",
+    "/vagas",
+    "/careers/",
+    "/career",
+    "/position",
+    "/opening",
+    "/aplicar",
+    "/oportunidad",
+  ];
+  const hasPath = pathSignals.some((s) => path.includes(s));
+  const titleSignals = [
+    "ios",
+    "swift",
+    "mobile",
+    "senior",
+    "engineer",
+    "developer",
+    "desenvolvedor",
+    "vaga",
+    "remoto",
+    "remote",
+    "hiring",
+  ];
+  const hasTitle = titleSignals.some((s) => haystack.includes(s));
+
+  if (kind === "board") return hasTitle || hasPath;
+  return hasPath || hasTitle;
+}
+
+export type HitDisposition = "denied" | "heuristic" | "keep";
+
+export function classifyHit(draft: JobListingDraft): HitDisposition {
+  if (isDeniedHost(draft.url)) return "denied";
+  if (!looksLikeJobPosting(draft.title, draft.url, draft.description)) return "heuristic";
+  return "keep";
+}
+
 export function draftToOpportunity(
   draft: JobListingDraft,
   discoveredAt: string,
 ): JobOpportunity | null {
-  if (isDeniedHost(draft.url)) return null;
+  if (classifyHit(draft) !== "keep") return null;
 
   const host = extractHost(draft.url);
   const hostKind = classifyHost(draft.url);
@@ -86,7 +145,6 @@ export function mergeByFingerprint(jobs: JobOpportunity[]): JobOpportunity[] {
         primary.discoveredAt <= secondary.discoveredAt
           ? primary.discoveredAt
           : secondary.discoveredAt,
-      // Preserve human label if any side already labeled.
       label:
         primary.label !== "unlabeled"
           ? primary.label
@@ -96,7 +154,7 @@ export function mergeByFingerprint(jobs: JobOpportunity[]): JobOpportunity[] {
     });
   }
 
-  return [...map.values()];
+  return sortByHostRank([...map.values()]);
 }
 
 export function filterJobs(
@@ -119,7 +177,6 @@ export function filterJobs(
   }
 }
 
-/** Stable id helper kept for journal correlation. */
 export function hashUrl(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 16);
 }

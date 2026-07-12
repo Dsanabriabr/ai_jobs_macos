@@ -3,6 +3,7 @@ export interface AtsTarget {
   label: string;
   /** Hostname suffix used for site: operator and classification, e.g. gupy.io */
   hostSuffix: string;
+  /** When true, include in ATS google_search lane. Follow/resolve still uses all targets. */
   enabled: boolean;
   /** Relative weight among enabled ATS targets (higher = more planned queries). */
   weight: number;
@@ -13,7 +14,7 @@ export interface DiscoveryBudget {
   surface: number;
   /** Share for ATS-targeted site: queries (0..1). */
   ats: number;
-  /** Share reserved conceptually for follow/resolve (consumed as max follow URLs). */
+  /** Share reserved for follow/resolve slots (0..1). */
   follow: number;
 }
 
@@ -29,17 +30,18 @@ export interface SourcePolicy {
 
 export const DEFAULT_SOURCE_POLICY: SourcePolicy = {
   surfaceEnabled: true,
+  // ATS lane off by default — enrichment via follow/resolve + optional toggles.
   atsTargets: [
-    { id: "gupy", label: "Gupy", hostSuffix: "gupy.io", enabled: true, weight: 0.9 },
+    { id: "gupy", label: "Gupy", hostSuffix: "gupy.io", enabled: false, weight: 0.9 },
     {
       id: "greenhouse",
       label: "Greenhouse",
       hostSuffix: "greenhouse.io",
-      enabled: true,
+      enabled: false,
       weight: 0.85,
     },
-    { id: "lever", label: "Lever", hostSuffix: "lever.co", enabled: true, weight: 0.8 },
-    { id: "ashby", label: "Ashby", hostSuffix: "ashbyhq.com", enabled: true, weight: 0.75 },
+    { id: "lever", label: "Lever", hostSuffix: "lever.co", enabled: false, weight: 0.8 },
+    { id: "ashby", label: "Ashby", hostSuffix: "ashbyhq.com", enabled: false, weight: 0.75 },
     {
       id: "workable",
       label: "Workable",
@@ -56,8 +58,8 @@ export const DEFAULT_SOURCE_POLICY: SourcePolicy = {
     },
   ],
   budget: {
-    surface: 0.45,
-    ats: 0.45,
+    surface: 0.7,
+    ats: 0.2,
     follow: 0.1,
   },
   maxPagesPerQuery: 2,
@@ -67,13 +69,36 @@ export const DEFAULT_SOURCE_POLICY: SourcePolicy = {
 export function normalizeBudget(budget: DiscoveryBudget): DiscoveryBudget {
   const sum = budget.surface + budget.ats + budget.follow;
   if (sum <= 0) {
-    return { surface: 0.45, ats: 0.45, follow: 0.1 };
+    return { surface: 0.7, ats: 0.2, follow: 0.1 };
   }
   return {
     surface: budget.surface / sum,
     ats: budget.ats / sum,
     follow: budget.follow / sum,
   };
+}
+
+/**
+ * Coupled budget: changing surface keeps follow fixed and sets ats = 1 - surface - follow.
+ * Invariant: surface + ats + follow === 1 (within float noise).
+ */
+export function setSurfaceShare(
+  surface: number,
+  follow = 0.1,
+): DiscoveryBudget {
+  const f = Math.min(0.2, Math.max(0, follow));
+  const s = Math.min(1 - f, Math.max(0, surface));
+  const ats = Math.max(0, 1 - s - f);
+  return normalizeBudget({ surface: s, ats, follow: f });
+}
+
+export function setFollowShare(
+  follow: number,
+  surface: number,
+): DiscoveryBudget {
+  const f = Math.min(0.2, Math.max(0, follow));
+  const s = Math.min(1 - f, Math.max(0, surface));
+  return setSurfaceShare(s, f);
 }
 
 export function allocateSlots(
@@ -85,7 +110,6 @@ export function allocateSlots(
   let ats = Math.floor(total * normalized.ats);
   let follow = total - surface - ats;
 
-  // Keep a follow slot when budget asks for it (rounding often drops 10%).
   if (normalized.follow > 0 && follow === 0 && total >= 3) {
     if (surface >= ats && surface > 0) {
       surface -= 1;
