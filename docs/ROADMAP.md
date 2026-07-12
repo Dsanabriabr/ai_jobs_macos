@@ -22,15 +22,21 @@
 - Listing filters + cadence picker in menu bar
 - Planner ATS-first `site:` queries (reduced aggregator noise, reduced source diversity)
 
-## P1.2 — Dual discovery & configurable sources (`feature/p1-dual-discovery`) — current
+## P1.2 — Dual discovery (`feature/p1-dual-discovery`)
 
-See [docs/P1_2_DUAL_DISCOVERY.md](P1_2_DUAL_DISCOVERY.md).
+- Configurable ATS targets + surface/ATS/follow lanes + Oxylabs pages + follow/resolve
+- Dup only cross-source
+- **Known issues:** empty list from hard denylist + strict heuristic; budget sliders not coupled to 100%; ATS still too central vs BR+remote goal → **P1.3**
 
-- `SourcePolicy` editável (ATS on/off/weight)
-- Lanes: **surface** + **ATS** + follow budget
-- Follow/resolve: superfície → extrair apply ATS
-- Paginação Oxylabs (`pages`) + limites na UI
-- Dup só cross-source (2+ hosts)
+## P1.3 — Surface-first recovery (next)
+
+See [docs/P1_3_SURFACE_FIRST.md](P1_3_SURFACE_FIRST.md).
+
+- Soft demote boards (don’t drop LinkedIn/Vagas/Indeed wholesale)
+- Relax posting heuristic; surface-first defaults (≈70/20/10)
+- Budget UI/domain invariant: surface+ATS+follow = 100%
+- Run diagnostics (raw/dropped/kept) so empty list is explainable
+- ATS optional enrichment, not primary index
 
 ## P2 — Intelligence v1 (Cursor)
 
