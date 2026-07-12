@@ -17,30 +17,37 @@
 
 ## P1.1 — Signal quality (`feature/p1-signal-quality`)
 
-- Host denylist + ATS preference (static — too biased toward Gupy; addressed in P1.2)
-- Canonical fingerprint + mirrors + Signal/Noise/Dup labels → `feedback.jsonl`
-- Listing filters + cadence picker in menu bar
-- Planner ATS-first `site:` queries (reduced aggregator noise, reduced source diversity)
+- Host denylist + ATS preference (later de-biased)
+- Canonical fingerprint + mirrors + Signal/Noise/Dup → `feedback.jsonl`
+- Listing filters + cadence picker
 
 ## P1.2 — Dual discovery (`feature/p1-dual-discovery`)
 
 - Configurable ATS targets + surface/ATS/follow lanes + Oxylabs pages + follow/resolve
 - Dup only cross-source
-- **Known issues:** empty list from hard denylist + strict heuristic; budget sliders not coupled to 100%; ATS still too central vs BR+remote goal → **P1.3**
 
 ## P1.3 — Surface-first recovery (`feature/p1-surface-first`) — current
 
 See [docs/P1_3_SURFACE_FIRST.md](P1_3_SURFACE_FIRST.md).
 
-- Soft demote boards (LinkedIn/Vagas/Indeed kept, ranked lower)
-- Relaxed posting heuristic; surface-first defaults (70/20/10)
-- Coupled budget invariant (surface+ATS+follow = 100%)
-- Run diagnostics on digest
-- ATS search lane off by default; follow/resolve still enriches
+- Soft demote boards; relaxed heuristic; coupled 100% budget
+- Diagnostics; ATS lane off by default; BR+remote surface queries
+- **Still:** many cells are hubs/search pages, not apply-able postings; company often Unknown → **not P2-ready**
 
-## P2 — Intelligence v1 (Cursor)
+## P1.4 — Clean posting list (next — gate before P2)
 
-- Ranking, pros/cons, cover letter via Cursor SDK (on **cleaned** jobs)
+See [docs/P1_4_CLEAN_POSTINGS.md](P1_4_CLEAN_POSTINGS.md).
+
+- Distinguish **posting** vs **hub** (listing/search page ≠ signal)
+- Edit company/title/URL on row; persist with labels
+- Default UI: postings/signals only; hubs filtered or labeled `hub`
+- `signal` only valid on `pageKind=posting`
+- Human enrichment loop before any Cursor spend
+- **P2 blocked** until listing is clean enough to not waste tokens on noise/hubs
+
+## P2 — Intelligence v1 (Cursor) — gated
+
+- Pros/cons + cover letter **only on `signal` postings with company**
 - Extend journal with Cursor outputs + approve/reject/ignore
 
 ## P3 — Apply
@@ -51,7 +58,7 @@ See [docs/P1_3_SURFACE_FIRST.md](P1_3_SURFACE_FIRST.md).
 
 ## P4 — Intelligence v2 (Create ML)
 
-- On-device classifier trained on P1.1+P2 journal
+- On-device classifier on P1.x+P2 journal (labels, corrections, optional snapshots)
 - Local pre-filter; Cursor for edge cases / generative text
 
 ## P5 — Multi-client & voice

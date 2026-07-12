@@ -29,7 +29,7 @@ cp .env.example .env
 
 ## Quick start
 
-Branch for this work: `feature/p1-surface-first` (P1.3 — merge after you validate).
+Branch for this work: `feature/p1-surface-first` (P1.3). Next planned: **P1.4 clean postings** (gate before Cursor/P2) — see [docs/P1_4_CLEAN_POSTINGS.md](docs/P1_4_CLEAN_POSTINGS.md).
 
 **Tip:** delete `packages/agent/.data/policy.json` once so surface-first defaults load (ATS lane off, 70/20/10 budget).
 
