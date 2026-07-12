@@ -1,0 +1,29 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+packages/agent/.env
+packages/agent/.data/
+
+# macOS / Xcode / Swift
+.DS_Store
+DerivedData/
+.swiftpm/
+apps/macos/.build/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+**/secrets/
