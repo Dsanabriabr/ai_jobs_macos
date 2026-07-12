@@ -5,12 +5,14 @@ import type { JobRepository } from "../ports/JobRepository.js";
 import type { JobSearchPort } from "../ports/JobSearchPort.js";
 import type { PolicyRepository } from "../ports/PolicyRepository.js";
 import type { StatusGateway } from "../ports/StatusGateway.js";
+import { QueryPlanner } from "../services/QueryPlanner.js";
 
 export interface RunDigestDeps {
   jobSearch: JobSearchPort;
   jobs: JobRepository;
   policies: PolicyRepository;
   status: StatusGateway;
+  planner?: QueryPlanner;
   now?: () => Date;
   id?: () => string;
 }
@@ -33,12 +35,19 @@ function toOpportunity(draft: JobListingDraft, discoveredAt: string): JobOpportu
 }
 
 function derivePostRunStatus(jobCount: number): Digest["status"] {
-  // New discoveries need review → attention. Empty run → idle.
   return jobCount > 0 ? "attention" : "idle";
 }
 
+function formatPlannedLine(query: string, geo: string, lang: string): string {
+  return `[${geo}/${lang}] ${query}`;
+}
+
 export class RunDigest {
-  constructor(private readonly deps: RunDigestDeps) {}
+  private readonly planner: QueryPlanner;
+
+  constructor(private readonly deps: RunDigestDeps) {
+    this.planner = deps.planner ?? new QueryPlanner();
+  }
 
   async execute(): Promise<Digest> {
     const { jobSearch, jobs, policies, status } = this.deps;
@@ -55,16 +64,22 @@ export class RunDigest {
 
     try {
       const policy = await policies.get();
+      const plan = this.planner.plan(policy);
       const discoveredAt = now().toISOString();
       const drafts: JobListingDraft[] = [];
 
-      for (const query of policy.queries) {
+      for (const planned of plan.searches) {
         const batch = await jobSearch.search({
-          query,
+          query: planned.query,
           limit: policy.resultLimitPerQuery,
-          geoLocation: policy.geoLocation,
+          geoLocation: planned.geoLocation,
         });
-        drafts.push(...batch);
+        drafts.push(
+          ...batch.map((item) => ({
+            ...item,
+            queryMatched: formatPlannedLine(planned.query, planned.geoLocation, planned.lang),
+          })),
+        );
       }
 
       const byUrl = new Map<string, JobOpportunity>();
@@ -75,6 +90,9 @@ export class RunDigest {
 
       const upserted = await jobs.upsertJobs([...byUrl.values()]);
       const digestStatus = derivePostRunStatus(upserted.length);
+      const queriesRun = plan.searches.map((s) =>
+        formatPlannedLine(s.query, s.geoLocation, s.lang),
+      );
 
       const digest: Digest = {
         id: newId(),
@@ -83,7 +101,8 @@ export class RunDigest {
         jobIds: upserted.map((j) => j.id),
         jobs: upserted,
         errorMessage: null,
-        queriesRun: [...policy.queries],
+        queriesRun,
+        plannedSearches: plan.searches,
       };
 
       await jobs.saveDigest(digest);
@@ -100,6 +119,7 @@ export class RunDigest {
         jobs: [],
         errorMessage: message,
         queriesRun: [],
+        plannedSearches: [],
       };
       await jobs.saveDigest(digest);
       status.set("error", message);

@@ -3,7 +3,10 @@ import SwiftUI
 
 struct DigestPopoverView: View {
     @EnvironmentObject private var session: AppSession
-    @State private var queriesText = "ios senior"
+    @State private var mode = "persona_graph"
+    @State private var queriesText = ""
+    @State private var geosText = "Brazil, United States, Germany"
+    @State private var maxPlanned = 6
     @State private var showPolicy = false
 
     var body: some View {
@@ -22,10 +25,12 @@ struct DigestPopoverView: View {
                 policyEditor
                 Divider()
             }
+            planPreview
+            Divider()
             footer
         }
         .padding(14)
-        .frame(width: 400, height: 520)
+        .frame(width: 440, height: 620)
         .task {
             await session.refresh()
             syncPolicyFields()
@@ -38,7 +43,7 @@ struct DigestPopoverView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Jobs")
+                Text("AI Jobs · P1")
                     .font(.headline)
                 Text(session.agentReachable ? "Agent online" : "Agent offline — start packages/agent")
                     .font(.caption)
@@ -80,12 +85,13 @@ struct DigestPopoverView: View {
                         Text(job.queryMatched)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                     if let description = job.description, !description.isEmpty {
                         Text(description)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .lineLimit(3)
+                            .lineLimit(2)
                     }
                     Button("Open") {
                         if let url = URL(string: job.url) {
@@ -98,27 +104,70 @@ struct DigestPopoverView: View {
                 .padding(.vertical, 4)
             }
             .listStyle(.plain)
+            .frame(minHeight: 160)
         } else {
             ContentUnavailableView(
                 "No jobs yet",
                 systemImage: "briefcase",
-                description: Text("Set queries, then tap Run now.")
+                description: Text("Persona graph plans bilingual remote/PJ searches. Tap Run now.")
             )
+            .frame(minHeight: 120)
         }
     }
 
     private var policyEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Queries (comma-separated)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextField("ios senior, android senior", text: $queriesText, axis: .vertical)
-                .lineLimit(2...3)
-            Text("Cadence: manual (scheduler in P1)")
+            Picker("Mode", selection: $mode) {
+                Text("Persona graph").tag("persona_graph")
+                Text("Manual queries").tag("manual_queries")
+            }
+            .pickerStyle(.segmented)
+
+            if mode == "manual_queries" {
+                Text("Queries (comma-separated)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("ios senior remote, vaga ios remoto", text: $queriesText, axis: .vertical)
+                    .lineLimit(2...3)
+            } else {
+                Text("Preferred geos (comma-separated)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Brazil, United States, Germany", text: $geosText)
+                Stepper("Max planned queries: \(maxPlanned)", value: $maxPlanned, in: 1...12)
+                if let profile = session.policy?.profile {
+                    Text("\(profile.displayName) · \(profile.workModel) · \(profile.visaConstraint)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Cadence: \(session.policy?.cadence.kind ?? "manual") (scheduler active on agent)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
             Button("Save policy") {
                 Task { await savePolicy() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var planPreview: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Planned searches")
+                .font(.caption.weight(.semibold))
+            if let searches = session.plan?.searches, !searches.isEmpty {
+                ForEach(searches.prefix(6)) { item in
+                    Text("• [\(item.geoLocation)/\(item.lang)] \(item.query)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            } else {
+                Text("No plan yet — open Policy and save, or wait for agent refresh.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -144,22 +193,31 @@ struct DigestPopoverView: View {
     }
 
     private func syncPolicyFields() {
-        if let policy = session.policy {
-            queriesText = policy.queries.joined(separator: ", ")
-        }
+        guard let policy = session.policy else { return }
+        mode = policy.mode
+        queriesText = policy.queries.joined(separator: ", ")
+        geosText = policy.profile.preferredGeos.joined(separator: ", ")
+        maxPlanned = policy.maxPlannedQueries
     }
 
     private func savePolicy() async {
-        let queries = queriesText
+        guard var policy = session.policy else { return }
+        policy.mode = mode
+        policy.maxPlannedQueries = maxPlanned
+        policy.profile.preferredGeos = geosText
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let policy = SearchPolicyDTO(
-            queries: queries.isEmpty ? ["ios senior"] : queries,
-            cadence: CadenceDTO(kind: "manual"),
-            resultLimitPerQuery: session.policy?.resultLimitPerQuery ?? 10,
-            geoLocation: session.policy?.geoLocation
-        )
+        if policy.profile.preferredGeos.isEmpty {
+            policy.profile.preferredGeos = ["Brazil", "United States"]
+        }
+        if mode == "manual_queries" {
+            let queries = queriesText
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            policy.queries = queries.isEmpty ? ["ios senior remote contractor"] : queries
+        }
         await session.savePolicy(policy)
     }
 }

@@ -58,6 +58,12 @@ export class FileJobRepository implements JobRepository {
 
   async getLatestDigest(): Promise<Digest | null> {
     const store = await this.read();
-    return store.latestDigest;
+    const digest = store.latestDigest;
+    if (!digest) return null;
+    return {
+      ...digest,
+      plannedSearches: digest.plannedSearches ?? [],
+      queriesRun: digest.queriesRun ?? [],
+    };
   }
 }

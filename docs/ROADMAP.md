@@ -10,39 +10,22 @@
 
 **Known P0 bias:** default query `ios senior` + `geo_location: United States` → English/US-heavy SERPs. Acceptable for smoke test; corrected in P1 via persona + query graph.
 
-## P1 — Sources, schedule & search persona
+## P1 — Sources, schedule & search persona (`feature/p1-search-persona`)
 
-### Scheduler & sources
+### Done on this branch
 
-- Real scheduler honoring cadence
-- Additional search adapters (boards / dedicated Google Jobs-style URLs) behind the same `JobSearchPort`
-- Editable pipeline stages on job entities (no apply yet)
+- `CandidateProfile` + `TermGraph` + `QueryPlanner`
+- `SearchPolicy.mode`: `persona_graph` | `manual_queries`
+- Geo rotation from `preferredGeos`; bilingual EN/PT planned searches
+- `GET /policy/plan` preview; digest stores `plannedSearches`
+- In-process cadence scheduler (non-manual)
+- Menu bar: mode toggle, geos, max planned, plan preview
 
-### Search persona & weighted term graph (from P0 feedback)
+### Still open for later P1 follow-ups
 
-Encode the human context as domain data, not hardcoded queries:
-
-| Context | Implication for discovery |
-|---------|---------------------------|
-| Brazilian, advanced English | Bilingual query expansion (pt-BR + en); do not lock geo to US |
-| No US visa | Prefer remote / worldwide / contractor; downrank “must relocate US”, H1B-only |
-| Company in Brazil, works as PJ | Boost contractor / B2B / remote international / LatAm-friendly language |
-
-**Domain additions (P1):**
-
-- `CandidateProfile` — locale, work model (`pj_contractor`), visa constraints, preferred geos/timezones
-- `TermGraph` — weighted nodes (`ios`, `swift`, `senior`, `remote`, `contractor`, `vaga`, …) with relations (`synonym`, `boost`, `penalty`)
-- `QueryPlanner` — expands graph + profile → concrete query set + geo rotation for Oxylabs
-- `SearchPolicy` evolves from raw `queries[]` to `profileId + graph + plannedQueries` (raw overrides still allowed)
-
-**Planner rules (initial):**
-
-1. Always emit EN + PT variants of core role terms  
-2. Rotate / combine `geo_location` (e.g. Brazil, United States, Germany) instead of US-only  
-3. Attach must-boost phrases: `remote`, `worldwide`, `contractor`, `PJ`, `async`  
-4. Attach penalties / filters later: visa sponsorship required, on-site only (full filter may wait until P2 ranking)
-
-UI (menu bar): edit profile weights lightly; show which planned queries ran in the digest.
+- Additional search adapters (boards / dedicated Jobs URLs)
+- Richer term-graph editor in UI (node weights)
+- Editable pipeline stages on job entities
 
 ## P2 — Intelligence v1 (Cursor)
 

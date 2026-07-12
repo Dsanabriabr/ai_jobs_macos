@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentRuntime } from "./application/createAgentRuntime.js";
+import { startCadenceScheduler } from "./application/startCadenceScheduler.js";
 import { createHttpApp } from "./interface/http/createHttpApp.js";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,9 +36,11 @@ const runtime = createAgentRuntime({
 });
 
 const app = createHttpApp(runtime);
+startCadenceScheduler(runtime);
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`ai-jobs agent listening on http://${host}:${info.port}`);
   console.log(`data dir: ${dataDir}`);
   console.log(`oxylabs user: ${process.env.OXYLABS_USERNAME}`);
+  console.log(`phase: P1 (persona graph + cadence scheduler)`);
 });

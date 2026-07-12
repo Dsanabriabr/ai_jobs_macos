@@ -1,10 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  DEFAULT_SEARCH_POLICY,
-  type SearchPolicy,
-} from "../../domain/entities/SearchPolicy.js";
+import type { SearchPolicy } from "../../domain/entities/SearchPolicy.js";
 import type { PolicyRepository } from "../../domain/ports/PolicyRepository.js";
+import { mergeWithDefaultPolicy } from "../../domain/usecases/ConfigureSearchPolicy.js";
 
 export class FilePolicyRepository implements PolicyRepository {
   constructor(private readonly filePath: string) {}
@@ -17,9 +15,10 @@ export class FilePolicyRepository implements PolicyRepository {
     await this.ensure();
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return JSON.parse(raw) as SearchPolicy;
+      const parsed = JSON.parse(raw) as Partial<SearchPolicy>;
+      return mergeWithDefaultPolicy(parsed);
     } catch {
-      return { ...DEFAULT_SEARCH_POLICY, queries: [...DEFAULT_SEARCH_POLICY.queries] };
+      return mergeWithDefaultPolicy(null);
     }
   }
 

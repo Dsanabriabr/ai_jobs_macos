@@ -29,6 +29,8 @@ cp .env.example .env
 
 ## Quick start
 
+Branch for this work: `feature/p1-search-persona` (merge to `main` after you validate).
+
 ### 1. Agent
 
 ```bash

@@ -14,7 +14,7 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
     }),
   );
 
-  app.get("/health", (c) => c.json({ ok: true, phase: "P0" }));
+  app.get("/health", (c) => c.json({ ok: true, phase: "P1" }));
 
   app.get("/status", (c) => c.json(runtime.getMenuBarStatus.execute()));
 
@@ -26,6 +26,11 @@ export function createHttpApp(runtime: AgentRuntime): Hono {
   app.get("/policy", async (c) => {
     const policy = await runtime.configureSearchPolicy.get();
     return c.json({ policy });
+  });
+
+  app.get("/policy/plan", async (c) => {
+    const plan = await runtime.previewSearchPlan.execute();
+    return c.json({ plan });
   });
 
   app.put("/policy", async (c) => {

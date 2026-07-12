@@ -11,6 +11,14 @@ struct JobOpportunityDTO: Codable, Identifiable, Equatable {
     let discoveredAt: String
 }
 
+struct PlannedSearchDTO: Codable, Equatable, Identifiable {
+    var id: String { "\(geoLocation)|\(lang)|\(query)" }
+    let query: String
+    let geoLocation: String
+    let lang: String
+    let rationale: String
+}
+
 struct DigestDTO: Codable, Equatable {
     let id: String
     let createdAt: String
@@ -19,6 +27,7 @@ struct DigestDTO: Codable, Equatable {
     let jobs: [JobOpportunityDTO]
     let errorMessage: String?
     let queriesRun: [String]
+    let plannedSearches: [PlannedSearchDTO]?
 }
 
 struct StatusResponse: Codable, Equatable {
@@ -43,7 +52,6 @@ struct CadenceDTO: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(kind, forKey: .kind)
-        // Only encode fields relevant to the cadence kind (zod discriminated union).
         switch kind {
         case "daily":
             try container.encodeIfPresent(hour, forKey: .hour)
@@ -81,15 +89,52 @@ struct CadenceDTO: Codable, Equatable {
     }
 }
 
+struct TermNodeDTO: Codable, Equatable, Identifiable {
+    let id: String
+    var label: String
+    var weight: Double
+    var role: String
+    var lang: String
+}
+
+struct CandidateProfileDTO: Codable, Equatable {
+    var id: String
+    var displayName: String
+    var primaryLocale: String
+    var languages: [String]
+    var workModel: String
+    var visaConstraint: String
+    var preferredGeos: [String]
+    var timezone: String
+    var notes: String?
+}
+
 struct SearchPolicyDTO: Codable, Equatable {
+    var mode: String
     var queries: [String]
     var cadence: CadenceDTO
     var resultLimitPerQuery: Int
     var geoLocation: String?
+    var profile: CandidateProfileDTO
+    var termGraph: TermGraphDTO
+    var maxPlannedQueries: Int
+}
+
+struct TermGraphDTO: Codable, Equatable {
+    var nodes: [TermNodeDTO]
 }
 
 struct PolicyResponse: Codable, Equatable {
     let policy: SearchPolicyDTO
+}
+
+struct SearchPlanDTO: Codable, Equatable {
+    let mode: String
+    let searches: [PlannedSearchDTO]
+}
+
+struct PlanResponse: Codable, Equatable {
+    let plan: SearchPlanDTO
 }
 
 struct RunResponse: Codable, Equatable {

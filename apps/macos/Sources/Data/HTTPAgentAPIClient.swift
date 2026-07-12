@@ -7,6 +7,7 @@ protocol AgentAPIClient {
     func latestDigest() async throws -> DigestDTO?
     func policy() async throws -> SearchPolicyDTO
     func updatePolicy(_ policy: SearchPolicyDTO) async throws -> SearchPolicyDTO
+    func previewPlan() async throws -> SearchPlanDTO
     func triggerRun() async throws -> DigestDTO
 }
 
@@ -61,6 +62,11 @@ struct HTTPAgentAPIClient: AgentAPIClient {
     func updatePolicy(_ policy: SearchPolicyDTO) async throws -> SearchPolicyDTO {
         let response: PolicyResponse = try await put("policy", body: policy)
         return response.policy
+    }
+
+    func previewPlan() async throws -> SearchPlanDTO {
+        let response: PlanResponse = try await get("policy/plan")
+        return response.plan
     }
 
     func triggerRun() async throws -> DigestDTO {

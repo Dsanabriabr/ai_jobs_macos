@@ -8,6 +8,7 @@ final class AppSession: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var digest: DigestDTO?
     @Published private(set) var policy: SearchPolicyDTO?
+    @Published private(set) var plan: SearchPlanDTO?
     @Published private(set) var isRunning = false
     @Published private(set) var lastError: String?
     @Published var agentReachable = false
@@ -39,45 +40,39 @@ final class AppSession: ObservableObject {
             errorMessage = statusResponse.errorMessage
             digest = try await client.latestDigest()
             policy = try await client.policy()
+            plan = try await client.previewPlan()
             lastError = nil
-            applyStatusColor()
         } catch {
             agentReachable = false
             lastError = error.localizedDescription
             status = .error
-            applyStatusColor()
         }
     }
 
     func runNow() async {
         isRunning = true
         status = .running
-        applyStatusColor()
         defer { isRunning = false }
         do {
             digest = try await client.triggerRun()
             let statusResponse = try await client.status()
             status = statusResponse.status
             errorMessage = statusResponse.errorMessage
+            plan = try await client.previewPlan()
             lastError = nil
-            applyStatusColor()
         } catch {
             lastError = error.localizedDescription
             status = .error
-            applyStatusColor()
         }
     }
 
     func savePolicy(_ policy: SearchPolicyDTO) async {
         do {
             self.policy = try await client.updatePolicy(policy)
+            self.plan = try await client.previewPlan()
             lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
-    }
-
-    private func applyStatusColor() {
-        // Color is rendered by MenuBarLabel from `status`.
     }
 }

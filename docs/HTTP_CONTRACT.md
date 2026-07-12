@@ -1,13 +1,14 @@
-# Agent HTTP contract (P0)
+# Agent HTTP contract (P1 on `feature/p1-search-persona`)
 
 Base URL default: `http://127.0.0.1:8787`
 
-Discovery backend (P0): Oxylabs Web Scraper API `google_search` via `OXYLABS_USERNAME` / `OXYLABS_PASSWORD` (not AI Studio).
+Discovery backend: Oxylabs Web Scraper API `google_search` via `OXYLABS_USERNAME` / `OXYLABS_PASSWORD`.  
+P1 adds **persona graph** planning (`CandidateProfile` + `TermGraph` → `QueryPlanner`) and cadence scheduler.
 
 ## `GET /health`
 
 ```json
-{ "ok": true, "phase": "P0" }
+{ "ok": true, "phase": "P1" }
 ```
 
 ## `GET /status`
@@ -18,46 +19,57 @@ Discovery backend (P0): Oxylabs Web Scraper API `google_search` via `OXYLABS_USE
 
 ## `GET /digest/latest`
 
+Includes `queriesRun` (display lines) and `plannedSearches` (structured plan used for the run).
+
+## `GET /policy` / `PUT /policy`
+
+P1 body includes:
+
 ```json
 {
-  "digest": {
-    "id": "uuid",
-    "createdAt": "ISO-8601",
-    "status": "attention",
-    "jobIds": ["..."],
-    "jobs": [
+  "mode": "persona_graph",
+  "queries": [],
+  "cadence": { "kind": "manual" },
+  "resultLimitPerQuery": 8,
+  "geoLocation": "Brazil",
+  "maxPlannedQueries": 6,
+  "profile": {
+    "id": "default-br-pj",
+    "displayName": "BR PJ · iOS",
+    "primaryLocale": "pt-BR",
+    "languages": ["pt-BR", "en"],
+    "workModel": "pj_contractor",
+    "visaConstraint": "no_us_visa",
+    "preferredGeos": ["Brazil", "United States", "Germany"],
+    "timezone": "America/Sao_Paulo",
+    "notes": "..."
+  },
+  "termGraph": { "nodes": [{ "id": "ios", "label": "ios", "weight": 0.95, "role": "skill", "lang": "any" }] }
+}
+```
+
+`mode: "manual_queries"` keeps P0-style raw `queries[]`.
+
+## `GET /policy/plan`
+
+Preview of planned Oxylabs searches without spending credits.
+
+```json
+{
+  "plan": {
+    "mode": "persona_graph",
+    "searches": [
       {
-        "id": "...",
-        "title": "...",
-        "company": null,
-        "url": "https://...",
-        "source": "oxylabs-web-scraper-google-search",
-        "queryMatched": "ios senior",
-        "description": "...",
-        "discoveredAt": "ISO-8601"
+        "query": "ios swift senior remote contractor",
+        "geoLocation": "Brazil",
+        "lang": "en",
+        "rationale": "..."
       }
-    ],
-    "errorMessage": null,
-    "queriesRun": ["ios senior"]
+    ]
   }
 }
 ```
 
-`digest` may be `null` before the first run.
-
-## `GET /policy` / `PUT /policy`
-
-```json
-{
-  "queries": ["ios senior"],
-  "cadence": { "kind": "manual" },
-  "resultLimitPerQuery": 10,
-  "geoLocation": "United States"
-}
-```
-
-Cadence kinds: `manual`, `daily`, `weekly`, `monthly`, `quarterly`, `semiannual`, `annual`.
-
 ## `POST /runs`
 
-Triggers `RunDigest`. Returns `{ "digest": { ... } }`.
+Runs the planned searches (or manual queries), returns digest.
