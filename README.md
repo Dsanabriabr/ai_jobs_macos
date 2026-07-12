@@ -69,4 +69,4 @@ Details: [docs/HTTP_CONTRACT.md](docs/HTTP_CONTRACT.md)
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+See [docs/ROADMAP.md](docs/ROADMAP.md). P1 includes search persona + weighted term graph (bilingual, remote/PJ) — [docs/P1_SEARCH_PERSONA.md](docs/P1_SEARCH_PERSONA.md).
